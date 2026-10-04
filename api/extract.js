@@ -16,7 +16,7 @@ export default async function handler(req, res) {
   const { prompt, image, mediaType } = req.body || {};
   if (!prompt || !image) return res.status(400).json({ error: "bad_request" });
 
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const model = process.env.GEMINI_MODEL || "gemini-3.0-flash";
   try {
     const r = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
