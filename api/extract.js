@@ -38,7 +38,7 @@ export default async function handler(req, res) {
 
     if (r.status === 429) return res.status(429).json({ error: "rate_limited" });
     const out = await r.json();
-    if (!r.ok) return res.status(502).json({ error: "upstream_error", detail: out?.error?.message });
+    if (!r.ok) return res.status(502).json({ error: "upstream_error", detail: `[model: ${model}] ` + (out?.error?.message || "") });
 
     const text = (out.candidates?.[0]?.content?.parts || []).map(p => p.text || "").join("");
     const clean = text.replace(/```json|```/g, "").trim();
