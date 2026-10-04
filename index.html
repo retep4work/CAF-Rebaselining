@@ -157,7 +157,7 @@ const RULES = `PROCESSING RULES (apply strictly):
 
 const CME_NOTE = `8. This is the PTCI CAF2 layout: if a "CME" field exists in the source (e.g. "No CME"), put its value into the "GROUND SPACE" column (the one under FACILITY UPGRADE), not a separate column.`;
 
-let state = { vendor:null, caf:null, schemaKey:null, rows:[], unsub:null, sample:null, db:null, downloads:null, mcp:null, stagedFile:null };
+let state = { vendor:null, caf:null, schemaKey:null, rows:[], unsub:null, sample:null, db:null, downloads:null, mcp:null, stagedFile:null, lastBatch:[] };
 
 function stageFile(file, sourceLabel){
   state.stagedFile = file;
@@ -175,6 +175,11 @@ function clearStaged(){
   zone.innerHTML = `Click here, then <strong>Ctrl+V</strong> (or <strong>Cmd+V</strong>) to paste a copied image — or use the file picker above.`;
 }
 
+// Unique keys per column (repeated names get " #2", " #3" so they stay separate)
+function keysOf(k){
+  const seen = {};
+  return SCHEMAS[k].map(c => { seen[c] = (seen[c]||0)+1; return seen[c]===1 ? c : `${c} #${seen[c]}`; });
+}
 function schemaKeyFor(vendor, caf){
   const opts = VENDORS[vendor];
   const hit = opts.find(o => o[0] === (caf||""));
@@ -215,6 +220,7 @@ function switchSchema(){
 const LS_KEY = k => "caf_rows_" + k;
 function saveRows(){ localStorage.setItem(LS_KEY(state.schemaKey), JSON.stringify(state.rows)); }
 function loadRows(){
+  state.lastBatch = [];
   try{ state.rows = JSON.parse(localStorage.getItem(LS_KEY(state.schemaKey)) || "[]"); }
   catch(e){ state.rows = []; }
   renderTable();
@@ -222,6 +228,7 @@ function loadRows(){
 
 function renderTable(){
   const cols = SCHEMAS[state.schemaKey];
+  const keys = keysOf(state.schemaKey);
   const scroll = document.getElementById("tableScroll");
   const empty = document.getElementById("emptyMsg");
   document.getElementById("rowCount").textContent = state.rows.length ? `${state.rows.length} row${state.rows.length>1?"s":""}` : "";
@@ -231,8 +238,8 @@ function renderTable(){
   }
   let html = "<table><thead><tr>" + cols.map(c=>`<th>${escapeHtml(c)}</th>`).join("") + "<th></th></tr></thead><tbody>";
   for(const row of state.rows){
-    html += "<tr>" + cols.map(c=>{
-      const v = row.data ? row.data[c] : row[c];
+    html += "<tr>" + cols.map((c,ci)=>{
+      const k = keys[ci]; const v = row.data ? row.data[k] : row[k];
       return (v===null||v===undefined||v==="") ? `<td class="blank">—</td>` : `<td>${escapeHtml(String(v))}</td>`;
     }).join("") + `<td class="del" data-id="${row.id}" title="Delete row">✕</td></tr>`;
   }
@@ -301,35 +308,50 @@ async function extract(){
 
   try{
     const cols = SCHEMAS[state.schemaKey];
-    const rules = RULES + (state.schemaKey==="PTCI_CAF2_Format" ? "\n"+CME_NOTE : "");
+    const keys = keysOf(state.schemaKey);
+    const rules = RULES + (state.schemaKey==="PTCI_CAF2_Format" ? "\n"+CME_NOTE : "") + `
+9. The image may show only SOME of the columns (a partial screenshot of a wide table). Fill only the columns visible in the image and use null for every other key. Never guess or copy values from other columns.
+10. Some column names repeat in the form; repeats are suffixed " #2", " #3" so every key is unique. They are in left-to-right order — assign each visible value to the correct occurrence by position.`;
     const prompt = `You are extracting structured site data from an uploaded vendor CAF form image.
 
 Target columns, in exact order (use these exact strings as JSON keys):
-${JSON.stringify(cols)}
+${JSON.stringify(keys)}
 
 ${rules}
 
-Reply with ONLY a JSON array of objects, one object per site/row found in the image. Each object must have exactly these keys: ${JSON.stringify(cols)}. Use null for any blank/unreadable cell. No prose, no markdown fences, just the JSON array.`;
+Reply with ONLY a JSON array of objects, one object per site/row found in the image. Each object must have exactly these keys: ${JSON.stringify(keys)}. Use null for any blank/unreadable/not-visible cell. No prose, no markdown fences, just the JSON array.`;
 
     const b64 = await imageToBase64(file);
     setStatus("Thinking… (this can take 15–60s)");
     const data = await callApi(prompt, b64);
     if(!Array.isArray(data) || !data.length) throw {code:"empty_completion"};
 
-    let added=0, dropped=0;
+    // Rows with no site identifier are treated as the NEXT PART of the previous rows (merged by position)
+    const idKeys = keys.filter((k,i)=>/site\s?id|site name|pla id/i.test(cols[i]));
+    const idOf = d => { for(const k of idKeys){ const v = d && d[k]; if(v!==null && v!==undefined && String(v).trim()!=="") return String(v).trim().toLowerCase(); } return ""; };
+    const prev = state.lastBatch.length ? state.lastBatch : state.rows.map(r=>r.id);
     const base = Date.now();
-    for(let i=0;i<data.length;i++){
-      const obj = data[i];
+    let added=0, merged=0, dropped=0; const touched=[];
+
+    data.forEach((obj,i)=>{
       const clean = {};
-      for(const c of cols){ clean[c] = (obj && obj[c]!==undefined) ? obj[c] : null; }
-      state.rows.push({ id: base+"-"+i, data: clean, addedAt: base+i });
-      added++;
-    }
-    for(const row of data){ for(const k of Object.keys(row||{})){ if(!cols.includes(k)) dropped++; } }
+      for(const k of keys){ const v = obj ? obj[k] : undefined; clean[k] = (v===undefined || v==="") ? null : v; }
+      const id = idOf(clean);
+      const target = id ? state.rows.find(r => idOf(r.data)===id) : state.rows.find(r => r.id===prev[i]);
+      if(target){
+        for(const k of keys){ if(clean[k]!==null) target.data[k] = clean[k]; }
+        merged++; touched.push(target.id);
+      } else {
+        const row = { id: base+"-"+i, data: clean, addedAt: base+i };
+        state.rows.push(row); added++; touched.push(row.id);
+      }
+      for(const k of Object.keys(obj||{})){ if(!keys.includes(k)) dropped++; }
+    });
+    state.lastBatch = touched;
     saveRows(); renderTable();
 
-    setStatus(`Extracted ${added} row${added>1?"s":""}.`, false, true);
-    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nRows added: ${added}\nSource fields with no matching column (dropped): ${dropped}\nRaw model reply (first row shown):\n${JSON.stringify(data[0], null, 2)}`);
+    setStatus(`Extracted ${data.length} row${data.length>1?"s":""}: ${added} new, ${merged} merged into existing row${merged===1?"":"s"}.`, false, true);
+    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nNew rows: ${added}\nMerged into existing rows: ${merged}\nSource fields with no matching column (dropped): ${dropped}\nRaw model reply (first row shown):\n${JSON.stringify(data[0], null, 2)}`);
     clearStaged();
   } catch(e){
     const code = e && e.code;
@@ -349,21 +371,21 @@ Reply with ONLY a JSON array of objects, one object per site/row found in the im
 }
 
 function buildTSV(){
-  const cols = SCHEMAS[state.schemaKey];
+  const cols = SCHEMAS[state.schemaKey], keys = keysOf(state.schemaKey);
   const lines = [cols.join("\t")];
   for(const row of state.rows){
     const d = row.data || row;
-    lines.push(cols.map(c => (d[c]===null||d[c]===undefined) ? "" : String(d[c]).replace(/\t|\n/g," ")).join("\t"));
+    lines.push(keys.map(k => (d[k]===null||d[k]===undefined) ? "" : String(d[k]).replace(/\t|\n/g," ")).join("\t"));
   }
   return lines.join("\n");
 }
 function buildCSV(){
-  const cols = SCHEMAS[state.schemaKey];
+  const cols = SCHEMAS[state.schemaKey], keys = keysOf(state.schemaKey);
   const esc = v => { v = (v===null||v===undefined)?"":String(v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; };
   const lines = [cols.map(esc).join(",")];
   for(const row of state.rows){
     const d = row.data || row;
-    lines.push(cols.map(c=>esc(d[c])).join(","));
+    lines.push(keys.map(k=>esc(d[k])).join(","));
   }
   return lines.join("\n");
 }
@@ -388,7 +410,7 @@ function downloadCSV(){
 function resetTable(){
   if(!state.rows.length) return;
   if(!confirm(`Delete all ${state.rows.length} row(s) for ${state.schemaKey}? This can't be undone.`)) return;
-  state.rows = []; saveRows(); renderTable();
+  state.rows = []; state.lastBatch = []; saveRows(); renderTable();
   setStatus("Table reset.", false, true);
 }
 
