@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CAF Site Data Extractor</title>
+<style>
+:root{
+  --bg:#0b0e13; --panel:#12161d; --line:#262c36; --line-soft:#1b2029;
+  --text:#e4e7ec; --text-dim:#8891a0; --amber:#d9a441; --amber-dim:#8a6a2c;
+  --teal:#2dd4bf; --red:#e2645a;
+  --mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#f6f5f2; --panel:#ffffff; --line:#dcdad3; --line-soft:#eae8e2;
+    --text:#1b1d22; --text-dim:#6b6f78; --amber:#9a6a1f; --amber-dim:#c89a52;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0b0e13; --panel:#12161d; --line:#262c36; --line-soft:#1b2029; --text:#e4e7ec; --text-dim:#8891a0;
+}
+*{box-sizing:border-box;}
+html,body{height:100%; margin:0;}
+body{
+  background:var(--bg); color:var(--text); font-family:var(--sans);
+  font-size:14px; line-height:1.5;
+}
+link.gfont{}
+.wrap{max-width:1100px; margin:0 auto; padding:28px 20px 80px;}
+header{border-bottom:1px solid var(--line); padding-bottom:18px; margin-bottom:22px;}
+h1{font-size:19px; font-weight:600; margin:0 0 4px; letter-spacing:-0.01em;}
+header p{margin:0; color:var(--text-dim); font-size:13px;}
+
+.panel{background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:16px; margin-bottom:16px;}
+.row{display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;}
+.field{display:flex; flex-direction:column; gap:5px; min-width:150px;}
+.field label{font-size:11px; color:var(--text-dim);}
+select, input[type=file]{
+  background:var(--bg); color:var(--text); border:1px solid var(--line);
+  border-radius:3px; padding:8px 10px; font-family:var(--sans); font-size:13px;
+}
+select:focus, input:focus, button:focus{outline:2px solid var(--amber); outline-offset:1px;}
+button{
+  background:var(--amber); color:#1a1304; border:none; border-radius:3px;
+  padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer; font-family:var(--sans);
+}
+button:disabled{background:var(--line); color:var(--text-dim); cursor:not-allowed;}
+button.ghost{background:transparent; color:var(--text); border:1px solid var(--line);}
+button.ghost:hover:not(:disabled){border-color:var(--amber);}
+button.danger{background:transparent; color:var(--red); border:1px solid var(--red);}
+
+.schema-badge{font-size:11px; color:var(--text-dim); font-family:var(--mono);}
+.paste-zone{
+  margin-top:12px; border:1.5px dashed var(--line); border-radius:4px; padding:16px;
+  text-align:center; font-size:12.5px; color:var(--text-dim); cursor:text; transition:border-color .15s, color .15s;
+}
+.paste-zone:hover, .paste-zone:focus{ border-color:var(--amber); color:var(--text); outline:none; }
+.paste-zone.has-image{ border-style:solid; border-color:var(--teal); color:var(--text); }
+.paste-zone img{max-height:90px; display:block; margin:0 auto 6px; border-radius:3px;}
+.status{font-size:12.5px; color:var(--text-dim); margin-top:10px; min-height:18px;}
+.status.err{color:var(--red);}
+.status.ok{color:var(--teal);}
+
+details.log{margin-top:10px; border:1px solid var(--line-soft); border-radius:3px;}
+details.log summary{cursor:pointer; padding:8px 10px; font-size:12px; color:var(--text-dim); user-select:none;}
+details.log pre{margin:0; padding:10px; border-top:1px solid var(--line-soft); font-family:var(--mono); font-size:11.5px; color:var(--text-dim); white-space:pre-wrap; max-height:220px; overflow:auto;}
+
+.table-scroll{overflow-x:auto; border:1px solid var(--line); border-radius:4px;}
+table{border-collapse:collapse; width:max-content; min-width:100%; font-family:var(--mono); font-size:12px;}
+th,td{padding:7px 10px; border-bottom:1px solid var(--line-soft); border-right:1px solid var(--line-soft); white-space:nowrap; text-align:left;}
+th{background:var(--line-soft); color:var(--text-dim); font-weight:600; position:sticky; top:0;}
+td.blank{color:var(--text-dim); font-style:italic;}
+tr:hover td{background:rgba(217,164,65,0.05);}
+td.del{cursor:pointer; color:var(--text-dim); font-family:var(--sans);}
+td.del:hover{color:var(--red);}
+
+.empty{padding:28px 10px; text-align:center; color:var(--text-dim); font-size:13px;}
+.actions{display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;}
+.count{font-size:12px; color:var(--text-dim); margin-left:auto; align-self:center;}
+footer{margin-top:28px; font-size:11.5px; color:var(--text-dim); border-top:1px solid var(--line); padding-top:14px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>CAF Site Data Extractor</h1>
+    <p>Upload a vendor CAF file → AI reads it against the exact reference header → rows append to a running table.</p>
+  </header>
+
+  <div class="panel">
+    <div class="row">
+      <div class="field">
+        <label for="vendorSel">Vendor</label>
+        <select id="vendorSel"></select>
+      </div>
+      <div class="field" id="cafField">
+        <label for="cafSel">CAF number</label>
+        <select id="cafSel"></select>
+      </div>
+      <div class="field">
+        <span class="schema-badge" id="schemaBadge"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <div class="field" style="flex:1; min-width:220px;">
+        <label for="fileInput">Site file (image)</label>
+        <input type="file" id="fileInput" accept="image/*">
+      </div>
+      <button id="extractBtn">Extract</button>
+    </div>
+    <div class="paste-zone" id="pasteZone" tabindex="0">
+      Click here, then <strong>Ctrl+V</strong> (or <strong>Cmd+V</strong>) to paste a copied image — or use the file picker above.
+    </div>
+    <div class="status" id="status"></div>
+    <details class="log" id="logBox" hidden>
+      <summary>Extraction details</summary>
+      <pre id="logText"></pre>
+    </details>
+  </div>
+
+  <div class="panel">
+    <div class="table-scroll" id="tableScroll">
+      <div class="empty" id="emptyMsg">No rows yet for this vendor/CAF. Extract a file above to begin.</div>
+    </div>
+    <div class="actions">
+      <button class="ghost" id="copyBtn">Copy as TSV (paste into Sheets)</button>
+      <button class="ghost" id="downloadBtn">Download .csv</button>
+      <button class="danger" id="resetBtn">Reset table</button>
+      <span class="count" id="rowCount"></span>
+    </div>
+  </div>
+
+  <footer>
+    Headers are fixed per the reference schema — columns are never added, renamed, or reordered. Data shared here persists for everyone who can open this page.
+  </footer>
+</div>
+
+<script>
+const SCHEMAS = {"NON-SLB":["CAF Year","CAF Type","HERMES/NON HERMES","TOWERCO Name","CAF File Name Reference","CAF Approved Date","Territory","Unique ID / Request Reference","TOWER CO SITE ID","GT Site ID","Site Name","MTD 0","AUDIT 0","MTD1","UNUTILIZED1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","MTD 2","UTILIZED 2","UNUTILIZED 2","REMARKS","VERTICAL SPACE MLA RESERVED CAPACITY","EXCESS IN VERTICAL","COST","REMARKS","MTD 0","AUDIT 0","MTD1","UNUTILIZED1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","MTD 2","UTILIZED 2","UNUTILIZED 2","REMARKS","MTD 0","AUDIT 0","MTD1","UNUTILIZED1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","MTD 2","UTILIZED 2","UNUTILIZED 2","REMARKS","GRID","TOWER","POWER","GROUND SPACE","REMARKS"],"PTCI_CAF1_Format":["APPROVED DATE","UNIQUIE_ID","TOWERCO Name","AREA","TOWER CO SITE ID","GT Site ID","Site Name","MTD 0","AUDIT 0 / CAF1 UTILIZED","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF1 UPDATED RESERVED","CAF1 UNUTILIZED","MTD 0","AUDIT 0 / CAF1 UTILIZED","RESERVED OR EXCESS","COST","CAF1 UPDATED RESERVED","MTD 0","AUDIT 0 / CAF1 UTILIZED","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF1 UPDATED RESERVED","CAF1 UNUTILIZED"],"PTCI_CAF2_Format":["APPROVED DATE","UNIQUIE_ID","HERMES/NON HERMES","TOWERCO Name","AREA","TOWER CO SITE ID","GT Site ID","Site Name","CAF1 UPDATED RESERVED","CAF1 UTILIZED","CAF1 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","CAF1 UPDATED RESERVED","CAF1 UTILIZED","CAF1 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF1 UPDATED RESERVED","CAF1 UTILIZED","CAF1 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","TOWER","POWER","GROUND SPACE [FACILITY UPGRADE \u2014 holds CME value","see rule 3]","REMARKS"],"PTCI_CAF3_Format":["APPROVED DATE","UNIQUIE_ID","HERMES/NON HERMES","TOWERCO Name","AREA","TOWER CO SITE ID","GT Site ID","Site Name","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUND UP)","COST","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","CAF2 UPDATED RESERVED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","COST","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","GRID","Tower","Ground Space","Power","Overall Remarks","GT REMARKS"],"PTCI_CAF4_Format":["APPROVED DATE","UNIQUIE_ID","HERMES/NON HERMES","TOWERCO NAME","AREA","TOWER CO SITEID","GT Site ID","Site Name","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF4 UPDATED RESERVED","CAF4 UTILIZED","CAF4 UNUTILIZED","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","COST","CAF4 UPDATED RESERVED","CAF4 UTILIZED","CAF4 UNUTILIZED","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF4 UPDATED RESERVED","CAF4 UTILIZED","CAF4 UNUTILIZED","GRID","TOWER","POWER","GROUND SPACE","CME","REMARKS"],"UNITY_CAF1_Format":["PLA ID","Site Name","TowerCo","EPA","EPA","EXCESS EPA","EPA","GRD","GRD","EXCESS GRD","GRD","PWR","PWR","EXCESS PWR","PWR","GRID"],"UNITY_CAF2_Format":["NSB/SLB","Yr","HERMES/NON HERMES","CAF2 Approved Date","UDI APP #","TCO","AREA","Territory Tagging","TOWER CO SITE ID","GT Site ID","Site Name","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","Cost","MTD 2","UNUTILIZED 2","Remarks","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","COST","MTD 2","UNUTILIZED 2","Remarks","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","COST","MTD 2","UNUTILIZED 2","Remarks","TOWER","POWER","GROUND SPACE","REMARKS"],"UNITY_CAF3_Format":["NSB/SLB","Yr","HERMES/NON HERMES","CAF Approved Date","UDI APP #","TCO","AREA","Territory Tagging","TOWER CO SITE ID","GT Site ID","Site Name","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","Cost","MTD 2","UNUTILIZED 2","Remarks","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","COST","MTD 2","UNUTILIZED 2","Remarks","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","COST","MTD 2","UNUTILIZED 2","Remarks","Grid Status","TOWER","POWER","GROUND SPACE","REMARKS"],"FTAP_CAF1_Format":["AREA","TOWER CO SITE ID","PLA ID","Site Name","MTD 0","AUDIT 0","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","UTILIZATION","MTD 1","UNUTILIZED","MTD 0","AUDIT 0","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","UTILIZATION","MTD 1","UNUTILIZED","MTD 0","AUDIT 0","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","UTILIZATION","MTD 1","UNUTILIZED"],"FTAP_CAF2_Format":["CAF Reference","Application","AREA","TOWER CO SITE ID","GT Site ID","Site Name","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Final EPA after expansion","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","MTD 2","UNUTILIZED 2","REMARKS","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Final EPA after expansion","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","MTD 2","UNUTILIZED 2","REMARKS","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","RESERVED FROM AUDIT","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Final EPA after expansion","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","REMARKS","MTD 2","UNUTILIZED 2","CHANGE REQUEST SCOPE","OBJECTIVES","ACTIVITIES NEEDED"],"MIDC_CAF1_Format":["APPROVED DATE","UNIQUE_ID","TOWERCO Name","AREA","TOWER CO SITE ID","GT Site ID","Site Name","MTD 0","AUDIT 0 / CAF1 UTILIZED","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF1 UPDATED RESERVED","CAF1 UNUTILIZED","MTD 0","AUDIT 0 / CAF1 UTILIZED","RESERVED OR EXCESS","COST","CAF1 UPDATED RESERVED","MTD 0","AUDIT 0 / CAF1 UTILIZED","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF1 UPDATED RESERVED","CAF1 UNUTILIZED"],"MIDC_CAF2_Format":["APPROVED DATE","TOWER CO SITE ID","TOWERCO Name","AREA","UNIQUE ID","Site ID","Site Name","CAF1 UPDATED RESERVED","CAF1 UTILIZED","CAF1 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","CAF1 UPDATED RESERVED","CAF1 UTILIZED","CAF1 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","CAF1 UPDATED RESERVED","CAF1 UTILIZED","CAF1 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","GRID TYPE","TOWER","POWER","GROUND SPACE","REMARKS"],"MIDC_CAF3_Format":["AMCEO APPROVED DATE","UNIQUIE_ID","TOWERCO NAME","AREA","TOWER CO SITEID","GT Site ID","Site Name","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY","COST","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","COST","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","GRID","TOWER","POWER","GROUND SPACE","AMB","REMARKS"]};
+const VENDORS = {"NON-SLB":[["","NON-SLB"]],"PTCI":[["CAF1","PTCI_CAF1_Format"],["CAF2","PTCI_CAF2_Format"],["CAF3","PTCI_CAF3_Format"],["CAF4","PTCI_CAF4_Format"]],"UNITY":[["CAF1","UNITY_CAF1_Format"],["CAF2","UNITY_CAF2_Format"],["CAF3","UNITY_CAF3_Format"]],"FTAP":[["CAF1","FTAP_CAF1_Format"],["CAF2","FTAP_CAF2_Format"]],"MIDC":[["CAF1","MIDC_CAF1_Format"],["CAF2","MIDC_CAF2_Format"],["CAF3","MIDC_CAF3_Format"]]};
+
+const RULES = `PROCESSING RULES (apply strictly):
+1. Use exactly the given column list, in that exact order. Never rename, reorder, or invent columns.
+2. Strip currency symbols (₱ $ € £) and thousands separators from numeric values — output raw numbers only.
+3. Convert "#N/A", "N/A", a standalone "-" placeholder, and "Err" (formula error text) to null. Do NOT touch real negative numbers like -0.25 — keep those exactly.
+4. If a field has both a "GT"-labeled version (e.g. "GT UTILIZED 1") and a vendor-labeled duplicate (e.g. "FTAP UTILIZED 1") for the same metric, always use the GT-labeled value. If the GT-labeled value is blank, output null for that field — do NOT fall back to the vendor-labeled duplicate.
+5. Ignore captions, titles, stamps, and signature blocks outside the actual data rows.
+6. One JSON object per row/site, in the order rows appear in the image.
+7. If a value is not confidently readable, use null rather than guessing.`;
+
+const CME_NOTE = `8. This is the PTCI CAF2 layout: if a "CME" field exists in the source (e.g. "No CME"), put its value into the "GROUND SPACE" column (the one under FACILITY UPGRADE), not a separate column.`;
+
+let state = { vendor:null, caf:null, schemaKey:null, rows:[], unsub:null, sample:null, db:null, downloads:null, mcp:null, stagedFile:null };
+
+function stageFile(file, sourceLabel){
+  state.stagedFile = file;
+  document.getElementById("fileInput").value = "";
+  const zone = document.getElementById("pasteZone");
+  const url = URL.createObjectURL(file);
+  zone.classList.add("has-image");
+  zone.innerHTML = `<img src="${url}" alt="pasted image"><span>${sourceLabel} ready — click Extract.</span>`;
+  setStatus("");
+}
+function clearStaged(){
+  state.stagedFile = null;
+  const zone = document.getElementById("pasteZone");
+  zone.classList.remove("has-image");
+  zone.innerHTML = `Click here, then <strong>Ctrl+V</strong> (or <strong>Cmd+V</strong>) to paste a copied image — or use the file picker above.`;
+}
+
+function schemaKeyFor(vendor, caf){
+  const opts = VENDORS[vendor];
+  const hit = opts.find(o => o[0] === (caf||""));
+  return hit ? hit[1] : opts[0][1];
+}
+function collSafe(key){ return "rows_" + key.replace(/[^a-zA-Z0-9_]/g,"_"); }
+
+function populateVendor(){
+  const sel = document.getElementById("vendorSel");
+  sel.innerHTML = Object.keys(VENDORS).map(v=>`<option value="${v}">${v}</option>`).join("");
+  sel.value = "PTCI";
+  populateCaf();
+}
+function populateCaf(){
+  const vendor = document.getElementById("vendorSel").value;
+  const opts = VENDORS[vendor];
+  const cafField = document.getElementById("cafField");
+  const sel = document.getElementById("cafSel");
+  if(opts.length===1 && opts[0][0]===""){
+    cafField.style.display="none";
+    state.caf = "";
+  } else {
+    cafField.style.display="";
+    sel.innerHTML = opts.map(o=>`<option value="${o[0]}">${o[0]}</option>`).join("");
+    state.caf = sel.value;
+  }
+  state.vendor = vendor;
+  switchSchema();
+}
+function switchSchema(){
+  const key = schemaKeyFor(state.vendor, state.caf);
+  state.schemaKey = key;
+  const cols = SCHEMAS[key];
+  document.getElementById("schemaBadge").textContent = `Schema: ${key} — ${cols.length} columns`;
+  loadRows();
+}
+
+const LS_KEY = k => "caf_rows_" + k;
+function saveRows(){ localStorage.setItem(LS_KEY(state.schemaKey), JSON.stringify(state.rows)); }
+function loadRows(){
+  try{ state.rows = JSON.parse(localStorage.getItem(LS_KEY(state.schemaKey)) || "[]"); }
+  catch(e){ state.rows = []; }
+  renderTable();
+}
+
+function renderTable(){
+  const cols = SCHEMAS[state.schemaKey];
+  const scroll = document.getElementById("tableScroll");
+  const empty = document.getElementById("emptyMsg");
+  document.getElementById("rowCount").textContent = state.rows.length ? `${state.rows.length} row${state.rows.length>1?"s":""}` : "";
+  if(!state.rows.length){
+    scroll.innerHTML = ""; scroll.appendChild(empty); empty.style.display="block";
+    return;
+  }
+  let html = "<table><thead><tr>" + cols.map(c=>`<th>${escapeHtml(c)}</th>`).join("") + "<th></th></tr></thead><tbody>";
+  for(const row of state.rows){
+    html += "<tr>" + cols.map(c=>{
+      const v = row.data ? row.data[c] : row[c];
+      return (v===null||v===undefined||v==="") ? `<td class="blank">—</td>` : `<td>${escapeHtml(String(v))}</td>`;
+    }).join("") + `<td class="del" data-id="${row.id}" title="Delete row">✕</td></tr>`;
+  }
+  html += "</tbody></table>";
+  scroll.innerHTML = html;
+  scroll.querySelectorAll(".del").forEach(el=>{
+    el.onclick = ()=> deleteRow(el.dataset.id);
+  });
+}
+function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+
+function deleteRow(id){
+  state.rows = state.rows.filter(r => r.id !== id);
+  saveRows(); renderTable();
+}
+
+function setStatus(msg, isErr, isOk){
+  const el = document.getElementById("status");
+  el.textContent = msg; el.className = "status" + (isErr?" err":isOk?" ok":"");
+}
+function setLog(text){
+  const box = document.getElementById("logBox");
+  document.getElementById("logText").textContent = text;
+  box.hidden = !text;
+}
+
+// Shrink the image so the upload stays well under Vercel's 4.5 MB request limit
+function imageToBase64(file, maxDim=2000){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width*scale); c.height = Math.round(img.height*scale);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      resolve(c.toDataURL("image/jpeg", 0.9).split(",")[1]);
+    };
+    img.onerror = ()=> reject({code:"image_rejected"});
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function callApi(prompt, imageB64, retry=true){
+  const res = await fetch("/api/extract", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json", "x-access-code": localStorage.getItem("caf_access_code") || "" },
+    body: JSON.stringify({ prompt, image: imageB64, mediaType: "image/jpeg" })
+  });
+  if(res.status===401 && retry){
+    const code = window.prompt("Enter access code:");
+    if(code){ localStorage.setItem("caf_access_code", code); return callApi(prompt, imageB64, false); }
+  }
+  if(res.status===401) throw {code:"unauthorized"};
+  if(res.status===429) throw {code:"rate_limited"};
+  const out = await res.json().catch(()=>({}));
+  if(!res.ok) throw {code: out.error || ("http_"+res.status), text: out.detail};
+  return out.data;
+}
+
+async function extract(){
+  const file = state.stagedFile;
+  if(!file){ setStatus("Choose or paste an image first.", true); return; }
+
+  const btn = document.getElementById("extractBtn");
+  btn.disabled = true; setStatus("Preparing image…"); setLog("");
+
+  try{
+    const cols = SCHEMAS[state.schemaKey];
+    const rules = RULES + (state.schemaKey==="PTCI_CAF2_Format" ? "\n"+CME_NOTE : "");
+    const prompt = `You are extracting structured site data from an uploaded vendor CAF form image.
+
+Target columns, in exact order (use these exact strings as JSON keys):
+${JSON.stringify(cols)}
+
+${rules}
+
+Reply with ONLY a JSON array of objects, one object per site/row found in the image. Each object must have exactly these keys: ${JSON.stringify(cols)}. Use null for any blank/unreadable cell. No prose, no markdown fences, just the JSON array.`;
+
+    const b64 = await imageToBase64(file);
+    setStatus("Thinking… (this can take 15–60s)");
+    const data = await callApi(prompt, b64);
+    if(!Array.isArray(data) || !data.length) throw {code:"empty_completion"};
+
+    let added=0, dropped=0;
+    const base = Date.now();
+    for(let i=0;i<data.length;i++){
+      const obj = data[i];
+      const clean = {};
+      for(const c of cols){ clean[c] = (obj && obj[c]!==undefined) ? obj[c] : null; }
+      state.rows.push({ id: base+"-"+i, data: clean, addedAt: base+i });
+      added++;
+    }
+    for(const row of data){ for(const k of Object.keys(row||{})){ if(!cols.includes(k)) dropped++; } }
+    saveRows(); renderTable();
+
+    setStatus(`Extracted ${added} row${added>1?"s":""}.`, false, true);
+    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nRows added: ${added}\nSource fields with no matching column (dropped): ${dropped}\nRaw model reply (first row shown):\n${JSON.stringify(data[0], null, 2)}`);
+    clearStaged();
+  } catch(e){
+    const code = e && e.code;
+    const msg = {
+      unauthorized: "Wrong or missing access code.",
+      image_rejected: "That file couldn't be read — try a clearer image or different format.",
+      rate_limited: "Too many requests right now — wait a moment and try again.",
+      invalid_json: "The reply wasn't valid data — try again, or a clearer image.",
+      empty_completion: "Nothing was extracted — try a clearer image.",
+      server_not_configured: "Server is missing GEMINI_API_KEY (set it in Vercel settings).",
+    }[code] || ("Extraction failed" + (code?` (${code})`:"") + ".");
+    setStatus(msg, true);
+    if(e && e.text) setLog("Details:\n"+e.text);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function buildTSV(){
+  const cols = SCHEMAS[state.schemaKey];
+  const lines = [cols.join("\t")];
+  for(const row of state.rows){
+    const d = row.data || row;
+    lines.push(cols.map(c => (d[c]===null||d[c]===undefined) ? "" : String(d[c]).replace(/\t|\n/g," ")).join("\t"));
+  }
+  return lines.join("\n");
+}
+function buildCSV(){
+  const cols = SCHEMAS[state.schemaKey];
+  const esc = v => { v = (v===null||v===undefined)?"":String(v); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; };
+  const lines = [cols.map(esc).join(",")];
+  for(const row of state.rows){
+    const d = row.data || row;
+    lines.push(cols.map(c=>esc(d[c])).join(","));
+  }
+  return lines.join("\n");
+}
+
+async function copyTSV(){
+  if(!state.rows.length){ setStatus("Nothing to copy yet.", true); return; }
+  try{
+    await navigator.clipboard.writeText(buildTSV());
+    setStatus("Copied — paste directly into a Google Sheets cell.", false, true);
+  }catch(e){ setStatus("Clipboard copy failed — select the table manually.", true); }
+}
+function downloadCSV(){
+  if(!state.rows.length){ setStatus("Nothing to export yet.", true); return; }
+  const blob = new Blob([buildCSV()], {type:"text/csv;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${state.schemaKey}_export.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setStatus("Saved.", false, true);
+}
+
+function resetTable(){
+  if(!state.rows.length) return;
+  if(!confirm(`Delete all ${state.rows.length} row(s) for ${state.schemaKey}? This can't be undone.`)) return;
+  state.rows = []; saveRows(); renderTable();
+  setStatus("Table reset.", false, true);
+}
+
+async function init(){
+  populateVendor();
+  document.getElementById("vendorSel").onchange = populateCaf;
+  document.getElementById("cafSel").onchange = ()=>{ state.caf = document.getElementById("cafSel").value; switchSchema(); };
+  document.getElementById("extractBtn").onclick = extract;
+
+  document.getElementById("fileInput").onchange = (e)=>{
+    const f = e.target.files[0];
+    if(f) stageFile(f, f.name);
+  };
+  const pasteZone = document.getElementById("pasteZone");
+  pasteZone.addEventListener("paste", (e)=>{
+    const items = e.clipboardData && e.clipboardData.items;
+    if(!items) return;
+    for(const item of items){
+      if(item.type && item.type.startsWith("image/")){
+        const file = item.getAsFile();
+        if(file){ stageFile(file, "Pasted image"); e.preventDefault(); return; }
+      }
+    }
+    setStatus("No image found on the clipboard.", true);
+  });
+  pasteZone.addEventListener("click", ()=> pasteZone.focus());
+
+  document.getElementById("copyBtn").onclick = copyTSV;
+  document.getElementById("downloadBtn").onclick = downloadCSV;
+  document.getElementById("resetBtn").onclick = resetTable;
+
+  loadRows();
+}
+init();
+</script>
+</body>
+</html>
