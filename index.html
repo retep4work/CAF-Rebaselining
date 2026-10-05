@@ -4,24 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>CAF Site Data Extractor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
 :root{
-  --bg:#0b0e13; --panel:#12161d; --line:#262c36; --line-soft:#1b2029;
-  --text:#e4e7ec; --text-dim:#8891a0; --amber:#d9a441; --amber-dim:#8a6a2c;
-  --teal:#2dd4bf; --red:#e2645a;
-  --mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
-  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme:dark;
+  --bg:#0F1115; --panel:#171B22; --line:#2A303A; --line-soft:#232933;
+  --text:#E6E9EE; --text-dim:#9AA3B2; --accent:#A78BFA; --accent-dim:#6D5BB5;
+  --teal:#4ADE80; --red:#F87171;
+  --mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --sans:"IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
-}
-@media (prefers-color-scheme: light){
-  :root:not([data-theme="dark"]){
-    --bg:#f6f5f2; --panel:#ffffff; --line:#dcdad3; --line-soft:#eae8e2;
-    --text:#1b1d22; --text-dim:#6b6f78; --amber:#9a6a1f; --amber-dim:#c89a52;
-  }
-}
-:root[data-theme="dark"]{
-  --bg:#0b0e13; --panel:#12161d; --line:#262c36; --line-soft:#1b2029; --text:#e4e7ec; --text-dim:#8891a0;
 }
 *{box-sizing:border-box;}
 html,body{height:100%; margin:0;}
@@ -43,14 +36,14 @@ select, input[type=file]{
   background:var(--bg); color:var(--text); border:1px solid var(--line);
   border-radius:3px; padding:8px 10px; font-family:var(--sans); font-size:13px;
 }
-select:focus, input:focus, button:focus{outline:2px solid var(--amber); outline-offset:1px;}
+select:focus, input:focus, button:focus{outline:2px solid var(--accent); outline-offset:1px;}
 button{
-  background:var(--amber); color:#1a1304; border:none; border-radius:3px;
+  background:var(--accent); color:#0F1115; border:none; border-radius:3px;
   padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer; font-family:var(--sans);
 }
 button:disabled{background:var(--line); color:var(--text-dim); cursor:not-allowed;}
 button.ghost{background:transparent; color:var(--text); border:1px solid var(--line);}
-button.ghost:hover:not(:disabled){border-color:var(--amber);}
+button.ghost:hover:not(:disabled){border-color:var(--accent);}
 button.danger{background:transparent; color:var(--red); border:1px solid var(--red);}
 
 .schema-badge{font-size:11px; color:var(--text-dim); font-family:var(--mono);}
@@ -58,7 +51,7 @@ button.danger{background:transparent; color:var(--red); border:1px solid var(--r
   margin-top:12px; border:1.5px dashed var(--line); border-radius:4px; padding:16px;
   text-align:center; font-size:12.5px; color:var(--text-dim); cursor:text; transition:border-color .15s, color .15s;
 }
-.paste-zone:hover, .paste-zone:focus{ border-color:var(--amber); color:var(--text); outline:none; }
+.paste-zone:hover, .paste-zone:focus{ border-color:var(--accent); color:var(--text); outline:none; }
 .paste-zone.has-image{ border-style:solid; border-color:var(--teal); color:var(--text); }
 .paste-zone img{max-height:90px; display:block; margin:0 auto 6px; border-radius:3px;}
 .status{font-size:12.5px; color:var(--text-dim); margin-top:10px; min-height:18px;}
@@ -74,7 +67,7 @@ table{border-collapse:collapse; width:max-content; min-width:100%; font-family:v
 th,td{padding:7px 10px; border-bottom:1px solid var(--line-soft); border-right:1px solid var(--line-soft); white-space:nowrap; text-align:left;}
 th{background:var(--line-soft); color:var(--text-dim); font-weight:600; position:sticky; top:0;}
 td.blank{color:var(--text-dim); font-style:italic;}
-tr:hover td{background:rgba(217,164,65,0.05);}
+tr:hover td{background:rgba(167,139,250,0.08);}
 td.del{cursor:pointer; color:var(--text-dim); font-family:var(--sans);}
 td.del:hover{color:var(--red);}
 
@@ -93,6 +86,25 @@ td.rn{color:var(--text-dim); text-align:right;}
 .ai-prev .old{color:var(--text-dim); text-decoration:line-through;}
 .ai-prev .new{color:var(--teal);}
 footer{margin-top:28px; font-size:11.5px; color:var(--text-dim); border-top:1px solid var(--line); padding-top:14px;}
+
+/* ---- Refined dark / violet ---- */
+.panel{border-radius:10px; padding:20px 22px;}
+.step{display:flex; align-items:center; gap:10px; margin:0 0 14px; font-size:15px; font-weight:600;}
+.num{width:24px; height:24px; border-radius:50%; background:var(--accent); color:#0F1115; font-size:13px; display:flex; align-items:center; justify-content:center;}
+select, input[type=file]{border-radius:6px; min-height:40px;}
+button{border-radius:6px; min-height:40px;}
+#extractBtn{padding:0 28px; font-size:14px;}
+#aiApply{background:#15803D; color:#fff;}
+.paste-zone{border-color:var(--accent-dim); background:#1A1826; border-radius:8px; color:var(--text);}
+.table-scroll{border-radius:8px;}
+th{background:#1D222B; color:#AEB6C4;}
+th.grp{color:var(--text);}
+th.grp.gs{background:#2A303A; color:#C9CFD8;}
+th.grp.ge{background:#1E3A5F; color:#A9CBFF;}
+th.grp.gg{background:#14402A; color:#8FE5AE;}
+th.grp.gp{background:#4A2A12; color:#FFB77A;}
+th.grp.gf{background:#33264F; color:#D3C2FF;}
+tbody tr:nth-child(even) td{background:#1A1F27;}
 </style>
 </head>
 <body>
@@ -103,6 +115,7 @@ footer{margin-top:28px; font-size:11.5px; color:var(--text-dim); border-top:1px 
   </header>
 
   <div class="panel">
+    <p class="step"><span class="num">1</span>Choose the form</p>
     <div class="row">
       <div class="field">
         <label for="vendorSel">Vendor</label>
@@ -123,6 +136,7 @@ footer{margin-top:28px; font-size:11.5px; color:var(--text-dim); border-top:1px 
   </div>
 
   <div class="panel">
+    <p class="step"><span class="num">2</span>Paste the image</p>
     <div class="row">
       <div class="field" style="flex:1; min-width:220px;">
         <label for="fileInput">Site file (image)</label>
@@ -141,6 +155,7 @@ footer{margin-top:28px; font-size:11.5px; color:var(--text-dim); border-top:1px 
   </div>
 
   <div class="panel">
+    <p class="step"><span class="num">3</span>Review and edit</p>
     <div class="table-scroll" id="tableScroll">
       <div class="empty" id="emptyMsg">No rows yet for this vendor/CAF. Extract a file above to begin.</div>
     </div>
@@ -264,6 +279,9 @@ function loadRows(){
   renderTable();
 }
 
+function blockCls(l){
+  return {"SITE DETAILS":"gs","EPA":"ge","GROUND SPACE":"gg","POWER":"gp"}[l] || "gf";
+}
 function renderTable(){
   const cols = SCHEMAS[state.schemaKey];
   const keys = keysOf(state.schemaKey);
@@ -275,7 +293,7 @@ function renderTable(){
     return;
   }
   const segs = SEGMENTS[state.schemaKey] || [];
-  const grp = "<tr><th class=\"grp\"></th>" + segs.map(([a,b,l])=>`<th class="grp" colspan="${b-a}">${escapeHtml(l)}</th>`).join("") + "<th class=\"grp\"></th></tr>";
+  const grp = "<tr><th class=\"grp\"></th>" + segs.map(([a,b,l])=>`<th class="grp ${blockCls(l)}" colspan="${b-a}">${escapeHtml(l)}</th>`).join("") + "<th class=\"grp\"></th></tr>";
   let html = "<table><thead>" + grp + "<tr><th>#</th>" + cols.map(c=>`<th>${escapeHtml(c)}</th>`).join("") + "<th></th></tr></thead><tbody>";
   state.rows.forEach((row, ri)=>{
     html += `<tr><td class="rn">${ri+1}</td>` + cols.map((c,ci)=>{
