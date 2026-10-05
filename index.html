@@ -363,6 +363,7 @@ async function extract(){
 
   const btn = document.getElementById("extractBtn");
   btn.disabled = true; setStatus("Preparing image…"); setLog("");
+  let tick = null;
 
   try{
     const cols = SCHEMAS[state.schemaKey];
@@ -374,7 +375,7 @@ async function extract(){
     const pkeys = keys.slice(pa, pb);                 // unique keys for the chosen part
     const askKeys = partMode ? uniqNames(cols.slice(pa, pb)) : pkeys; // names the model sees (unique within the part)
     const rules = RULES + (state.schemaKey==="PTCI_CAF2_Format" ? "\n"+CME_NOTE : "") + `
-9. The image may show only SOME of the columns (a partial screenshot of a wide table). Fill only the columns visible in the image and use null for every other key. Never guess or copy values from other columns.
+9. The image may show only SOME of the columns (a partial screenshot of a wide table). Fill only the columns visible in the image and leave out every other key. Never guess or copy values from other columns.
 ` + (partMode
   ? `10. This image shows ONE part of the form: the "${seg ? seg[2] : ''}" part (it may have a title such as EPA, GROUND SPACE or POWER). The keys listed above are exactly that group, in left-to-right order. Match each visible header to the key at the same position; do not fill keys that are not visible.`
   : `10. Some column names repeat in the form; repeats are suffixed " #2", " #3" so every key is unique. They are in left-to-right order — assign each visible value to the correct occurrence by position.`);
@@ -385,10 +386,11 @@ ${JSON.stringify(askKeys)}
 
 ${rules}
 
-Reply with ONLY a JSON array of objects, one object per site/row found in the image. Each object must have exactly these keys: ${JSON.stringify(askKeys)}. Use null for any blank/unreadable/not-visible cell. No prose, no markdown fences, just the JSON array.`;
+Reply with ONLY a JSON array of objects, one object per site/row found in the image. Each object may use only these keys: ${JSON.stringify(askKeys)}. Include a key ONLY when its cell is visible and has a value; OMIT every blank, unreadable or not-visible key (do not write null). No prose, no markdown fences, just the JSON array.`;
 
     const b64 = await imageToBase64(file);
-    setStatus("Thinking… (this can take 15–60s)");
+    const t0 = Date.now(); setStatus("Reading the image… 0s");
+    tick = setInterval(()=> setStatus(`Reading the image… ${Math.round((Date.now()-t0)/1000)}s`), 1000);
     const data = await callApi(prompt, b64);
     if(!Array.isArray(data) || !data.length) throw {code:"empty_completion"};
 
@@ -433,6 +435,7 @@ Reply with ONLY a JSON array of objects, one object per site/row found in the im
     setStatus(msg, true);
     if(e && e.text) setLog("Details:\n"+e.text);
   } finally {
+    if(tick) clearInterval(tick);
     btn.disabled = false;
   }
 }
