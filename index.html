@@ -81,6 +81,17 @@ td.del:hover{color:var(--red);}
 .empty{padding:28px 10px; text-align:center; color:var(--text-dim); font-size:13px;}
 .actions{display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;}
 .count{font-size:12px; color:var(--text-dim); margin-left:auto; align-self:center;}
+th.grp{position:static; text-align:center; background:var(--line); color:var(--text); letter-spacing:.04em; font-size:11px;}
+td.rn{color:var(--text-dim); text-align:right;}
+.ai-box{margin-top:18px; border-top:1px solid var(--line-soft); padding-top:14px;}
+.ai-box label{display:block; font-size:12px; color:var(--text-dim); margin-bottom:6px;}
+.ai-box textarea{width:100%; box-sizing:border-box; background:transparent; color:var(--text); border:1px solid var(--line); border-radius:3px; padding:8px 10px; font:inherit; font-size:13px; resize:vertical;}
+.ai-box .ai-row{display:flex; gap:10px; align-items:flex-start;}
+.ai-box .ai-row button{flex:none;}
+.ai-prev{margin-top:10px; border:1px solid var(--line-soft); border-radius:3px; padding:10px; font-size:12.5px;}
+.ai-prev ul{margin:8px 0; padding-left:18px; max-height:240px; overflow:auto; font-family:var(--mono); font-size:11.5px;}
+.ai-prev .old{color:var(--text-dim); text-decoration:line-through;}
+.ai-prev .new{color:var(--teal);}
 footer{margin-top:28px; font-size:11.5px; color:var(--text-dim); border-top:1px solid var(--line); padding-top:14px;}
 </style>
 </head>
@@ -139,10 +150,19 @@ footer{margin-top:28px; font-size:11.5px; color:var(--text-dim); border-top:1px 
       <button class="danger" id="resetBtn">Reset table</button>
       <span class="count" id="rowCount"></span>
     </div>
+    <div class="ai-box">
+      <label for="aiPrompt">Ask AI to revise the table (change values, clear a column, delete rows…)</label>
+      <div class="ai-row">
+        <textarea id="aiPrompt" rows="2" placeholder='e.g. "Set COST to 0 for row 2" · "Make all Site Names uppercase" · "Delete row 3" · "Clear REMARKS in the POWER block"'></textarea>
+        <button id="aiBtn">Ask AI</button>
+      </div>
+      <div class="status" id="aiStatus"></div>
+      <div id="aiPreview"></div>
+    </div>
   </div>
 
   <footer>
-    Headers are fixed per the reference schema — columns are never added, renamed, or reordered. Data shared here persists for everyone who can open this page.
+    Headers are fixed per the reference schema — columns are never added, renamed, or reordered. Rows are saved in this browser only — use Copy or Download CSV to keep them.
   </footer>
 </div>
 
@@ -254,13 +274,15 @@ function renderTable(){
     scroll.innerHTML = ""; scroll.appendChild(empty); empty.style.display="block";
     return;
   }
-  let html = "<table><thead><tr>" + cols.map(c=>`<th>${escapeHtml(c)}</th>`).join("") + "<th></th></tr></thead><tbody>";
-  for(const row of state.rows){
-    html += "<tr>" + cols.map((c,ci)=>{
+  const segs = SEGMENTS[state.schemaKey] || [];
+  const grp = "<tr><th class=\"grp\"></th>" + segs.map(([a,b,l])=>`<th class="grp" colspan="${b-a}">${escapeHtml(l)}</th>`).join("") + "<th class=\"grp\"></th></tr>";
+  let html = "<table><thead>" + grp + "<tr><th>#</th>" + cols.map(c=>`<th>${escapeHtml(c)}</th>`).join("") + "<th></th></tr></thead><tbody>";
+  state.rows.forEach((row, ri)=>{
+    html += `<tr><td class="rn">${ri+1}</td>` + cols.map((c,ci)=>{
       const k = keys[ci]; const v = row.data ? row.data[k] : row[k];
       return (v===null||v===undefined||v==="") ? `<td class="blank">—</td>` : `<td>${escapeHtml(String(v))}</td>`;
     }).join("") + `<td class="del" data-id="${row.id}" title="Delete row">✕</td></tr>`;
-  }
+  });
   html += "</tbody></table>";
   scroll.innerHTML = html;
   scroll.querySelectorAll(".del").forEach(el=>{
@@ -304,7 +326,7 @@ async function callApi(prompt, imageB64, retry=true){
   const res = await fetch("/api/extract", {
     method:"POST",
     headers:{ "Content-Type":"application/json", "x-access-code": localStorage.getItem("caf_access_code") || "" },
-    body: JSON.stringify({ prompt, image: imageB64, mediaType: "image/jpeg" })
+    body: JSON.stringify({ prompt, image: imageB64 || undefined, mediaType: "image/jpeg" })
   });
   if(res.status===401 && retry){
     const code = window.prompt("Enter access code:");
@@ -471,6 +493,78 @@ async function init(){
 
   loadRows();
 }
+// ---------- Ask AI to revise the table ----------
+function aiSay(msg, err){ const el = document.getElementById("aiStatus"); el.textContent = msg; el.className = "status" + (err ? " err" : ""); }
+async function askAI(){
+  const text = document.getElementById("aiPrompt").value.trim();
+  const prev = document.getElementById("aiPreview"); prev.innerHTML = "";
+  if(!text){ aiSay("Type an instruction first.", true); return; }
+  if(!state.rows.length){ aiSay("There are no rows to revise yet.", true); return; }
+  const keys = keysOf(state.schemaKey), segs = SEGMENTS[state.schemaKey] || [];
+  const colInfo = keys.map((k,i)=>{ const sg = segs.find(x=>i>=x[0] && i<x[1]); return {key:k, block: sg ? sg[2] : ""}; });
+  const rows = state.rows.map((r,i)=>{ const o = {row:i+1}; for(const k of keys){ const v = r.data[k]; if(v!==null && v!==undefined && v!=="") o[k] = v; } return o; });
+  const prompt = `You edit a table of extracted telecom site data. Apply the user's instruction and reply with ONLY JSON, no prose, no markdown:
+{"message":"one short sentence of what you changed or why you could not","edits":[{"op":"set","row":1,"column":"<exact key>","value":"<new value or null to clear>"},{"op":"delete_row","row":2}]}
+
+Rules:
+- "row" is the 1-based row number shown in the data below.
+- "column" must be EXACTLY one of the keys listed under COLUMNS. Repeated headers have suffixes like " #2"; use COLUMNS' block names (EPA, GROUND SPACE, POWER...) to pick the right one.
+- Change only what the instruction asks. Never invent data. If the instruction is unclear or impossible, return "edits":[] and explain in "message".
+- Cells not shown in a row are empty.
+
+COLUMNS (key and its block):
+${JSON.stringify(colInfo)}
+
+ROWS:
+${JSON.stringify(rows)}
+
+INSTRUCTION: ${text}`;
+  const btn = document.getElementById("aiBtn"); btn.disabled = true; aiSay("Thinking…");
+  try{
+    const out = await callApi(prompt, null);
+    const list = Array.isArray(out) ? out : (out && Array.isArray(out.edits) ? out.edits : []);
+    const valid = new Set(keys);
+    const edits = list.filter(e => e && Number.isInteger(+e.row) && e.row>=1 && e.row<=state.rows.length &&
+      (e.op==="delete_row" || ((e.op==="set" || !e.op) && valid.has(e.column))));
+    const msg = (out && out.message) || "";
+    if(!edits.length){ aiSay(msg || "No changes were suggested.", !msg); return; }
+    state.pendingEdits = edits; aiSay(msg || `${edits.length} change(s) proposed.`);
+    const li = edits.slice(0,300).map(e=>{
+      if(e.op==="delete_row"){ return `<li>Delete row ${e.row}</li>`; }
+      const old = state.rows[e.row-1].data[e.column];
+      const o = (old===null||old===undefined||old==="") ? "—" : String(old);
+      const n = (e.value===null||e.value===undefined||e.value==="") ? "—" : String(e.value);
+      return `<li>Row ${e.row} · ${escapeHtml(e.column)}: <span class="old">${escapeHtml(o)}</span> → <span class="new">${escapeHtml(n)}</span></li>`;
+    }).join("");
+    prev.innerHTML = `<div class="ai-prev"><strong>${edits.length} proposed change${edits.length>1?"s":""}</strong> — nothing is changed until you apply.<ul>${li}</ul>
+      <div class="actions" style="margin-top:6px"><button id="aiApply">Apply changes</button><button class="ghost" id="aiDiscard">Discard</button></div></div>`;
+    document.getElementById("aiApply").onclick = applyEdits;
+    document.getElementById("aiDiscard").onclick = ()=>{ state.pendingEdits = []; prev.innerHTML = ""; aiSay(""); };
+  }catch(e){
+    aiSay(e && e.code==="unauthorized" ? "Wrong or missing access code." : e && e.code==="rate_limited" ? "Too many requests — wait a moment and try again." : "AI request failed" + (e && e.code ? ` (${e.code})` : "") + ". Try again.", true);
+  }finally{ btn.disabled = false; }
+}
+function applyEdits(){
+  const edits = state.pendingEdits || [];
+  state.undoSnapshot = JSON.stringify(state.rows);
+  const del = new Set();
+  for(const e of edits){
+    if(e.op==="delete_row"){ del.add(e.row-1); continue; }
+    state.rows[e.row-1].data[e.column] = (e.value===undefined || e.value==="") ? null : e.value;
+  }
+  state.rows = state.rows.filter((_,i)=>!del.has(i));
+  state.lastBatch = []; state.pendingEdits = [];
+  saveRows(); renderTable();
+  document.getElementById("aiPreview").innerHTML = `<div class="ai-prev">Applied ${edits.length} change${edits.length>1?"s":""}. <button class="ghost" id="aiUndo">Undo</button></div>`;
+  document.getElementById("aiUndo").onclick = ()=>{
+    state.rows = JSON.parse(state.undoSnapshot); state.lastBatch = [];
+    saveRows(); renderTable(); document.getElementById("aiPreview").innerHTML = ""; aiSay("Undone.");
+  };
+  aiSay("");
+}
+document.getElementById("aiBtn").onclick = askAI;
+document.getElementById("aiPrompt").addEventListener("keydown", e=>{ if((e.metaKey||e.ctrlKey) && e.key==="Enter") askAI(); });
+
 init();
 </script>
 </body>
