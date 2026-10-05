@@ -15,7 +15,7 @@ export default async function handler(req, res) {
   }
 
   const { prompt, image, mediaType } = req.body || {};
-  if (!prompt || !image) return res.status(400).json({ error: "bad_request" });
+  if (!prompt) return res.status(400).json({ error: "bad_request" }); // image is optional (text-only edits)
 
   // Preferred model first, then fallbacks
   const models = [...new Set([
@@ -27,7 +27,7 @@ export default async function handler(req, res) {
 
   const body = JSON.stringify({
     contents: [{ role: "user", parts: [
-      { inline_data: { mime_type: mediaType || "image/jpeg", data: image } },
+      ...(image ? [{ inline_data: { mime_type: mediaType || "image/jpeg", data: image } }] : []),
       { text: prompt },
     ] }],
     generationConfig: { temperature: 0, responseMimeType: "application/json" },
