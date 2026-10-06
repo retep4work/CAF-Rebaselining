@@ -376,6 +376,7 @@ async function extract(){
     const askKeys = partMode ? uniqNames(cols.slice(pa, pb)) : pkeys; // names the model sees (unique within the part)
     const rules = RULES + (state.schemaKey==="PTCI_CAF2_Format" ? "\n"+CME_NOTE : "") + `
 9. The image may show only SOME of the columns (a partial screenshot of a wide table). Fill only the columns visible in the image and leave out every other key. Never guess or copy values from other columns.
+11. "PLA ID", "GT Site ID" and "Site ID" are the same field. If the image shows any of them, put the value in whichever of those columns exists in the target list.
 ` + (partMode
   ? `10. This image shows ONE part of the form: the "${seg ? seg[2] : ''}" part (it may have a title such as EPA, GROUND SPACE or POWER). The keys listed above are exactly that group, in left-to-right order. Match each visible header to the key at the same position; do not fill keys that are not visible.`
   : `10. Some column names repeat in the form; repeats are suffixed " #2", " #3" so every key is unique. They are in left-to-right order — assign each visible value to the correct occurrence by position.`);
