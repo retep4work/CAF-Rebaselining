@@ -105,6 +105,7 @@ th.grp.gg{background:#14402A; color:#8FE5AE;}
 th.grp.gp{background:#4A2A12; color:#FFB77A;}
 th.grp.gf{background:#33264F; color:#D3C2FF;}
 tbody tr:nth-child(even) td{background:#1A1F27;}
+button:disabled{opacity:.45; cursor:default;}
 </style>
 </head>
 <body>
@@ -162,6 +163,7 @@ tbody tr:nth-child(even) td{background:#1A1F27;}
     <div class="actions">
       <button class="ghost" id="copyBtn">Copy as TSV (paste into Sheets)</button>
       <button class="ghost" id="downloadBtn">Download .csv</button>
+      <button class="ghost" id="undoBtn" disabled title="Undo (Cmd/Ctrl + Z)">Undo</button>
       <button class="danger" id="resetBtn">Reset table</button>
       <span class="count" id="rowCount"></span>
     </div>
@@ -273,7 +275,7 @@ function switchSchema(){
 const LS_KEY = k => "caf_rows_" + k;
 function saveRows(){ localStorage.setItem(LS_KEY(state.schemaKey), JSON.stringify(state.rows)); }
 function loadRows(){
-  state.lastBatch = [];
+  state.lastBatch = []; state.undoStack = []; updateUndoBtn();
   try{ state.rows = JSON.parse(localStorage.getItem(LS_KEY(state.schemaKey)) || "[]"); }
   catch(e){ state.rows = []; }
   renderTable();
@@ -310,6 +312,7 @@ function renderTable(){
 function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
 
 function deleteRow(id){
+  pushUndo("row delete");
   state.rows = state.rows.filter(r => r.id !== id);
   saveRows(); renderTable();
 }
@@ -377,6 +380,7 @@ async function extract(){
     const rules = RULES + (state.schemaKey==="PTCI_CAF2_Format" ? "\n"+CME_NOTE : "") + `
 9. The image may show only SOME of the columns (a partial screenshot of a wide table). Fill only the columns visible in the image and leave out every other key. Never guess or copy values from other columns.
 11. "PLA ID", "GT Site ID" and "Site ID" are the same field. If the image shows any of them, put the value in whichever of those columns exists in the target list.
+12. A row-number column (headed "NO.", "No", "#" or similar, with values 1, 2, 3…) is only a row counter. NEVER copy it into any column, and in particular NEVER into UNIQUE_ID / UNIQUIE_ID / UNIQUE ID. Fill a unique-ID column only when the image has a column explicitly headed as a unique ID or request reference; otherwise omit it.
 ` + (partMode
   ? `10. This image shows ONE part of the form: the "${seg ? seg[2] : ''}" part (it may have a title such as EPA, GROUND SPACE or POWER). The keys listed above are exactly that group, in left-to-right order. Match each visible header to the key at the same position; do not fill keys that are not visible.`
   : `10. Some column names repeat in the form; repeats are suffixed " #2", " #3" so every key is unique. They are in left-to-right order — assign each visible value to the correct occurrence by position.`);
@@ -398,30 +402,66 @@ Reply with ONLY a JSON array of objects, one object per site/row found in the im
     // Rows with no site identifier are treated as the NEXT PART of the previous rows (merged by position)
     const idKeys = keys.filter((k,i)=>/site\s?id|site name|pla id/i.test(cols[i]));
     const idOf = d => { for(const k of idKeys){ const v = d && d[k]; if(v!==null && v!==undefined && String(v).trim()!=="") return String(v).trim().toLowerCase(); } return ""; };
-    const prev = state.lastBatch.length ? state.lastBatch : state.rows.map(r=>r.id);
+    const blank = v => v===null || v===undefined || String(v).trim()==="";
+    const idKeys1 = keys.filter((k,i)=>/site\s?id|pla id/i.test(cols[i]));
+    const idKeys2 = keys.filter((k,i)=>/site name/i.test(cols[i]));
+    const cmp = (list,a,b)=>{ let hit=null; for(const k of list){ const x=a&&a[k], y=b&&b[k]; if(blank(x)||blank(y)) continue; if(String(x).trim().toLowerCase()!==String(y).trim().toLowerCase()) return false; hit=true; } return hit; };
+    const sameSite = (a,b)=>{ const r = cmp(idKeys1,a,b); return r!==null ? r : (cmp(idKeys2,a,b)===true); };
+    const isEmpty = v => v===null || v===undefined || String(v).trim()==="";
+    let cursor = 0; // table position to search from, so incoming rows stay in order
     const base = Date.now();
-    let added=0, merged=0, dropped=0; const touched=[];
+    let added=0, merged=0, dropped=0, kept=0, rowNo=0; const touched=[]; const changes=[];
+    const segsAll = SEGMENTS[state.schemaKey] || [];
+    const lab = ci => { const sg = segsAll.find(x=>ci>=x[0] && ci<x[1]); return cols[ci] + (sg ? ` [${sg[2]}]` : ""); };
+    pushUndo("last paste");
 
     data.forEach((obj,i)=>{
       const clean = {};
       for(const k of keys) clean[k] = null;
       pkeys.forEach((k,j)=>{ const v = obj ? obj[askKeys[j]] : undefined; if(v!==undefined && v!=="") clean[k] = v; });
+      // Safety net: a short plain number (1, 2, 3…) in a UNIQUE ID column is a row counter, not an ID
+      cols.forEach((c,ci)=>{ const k = keys[ci]; if(/uniqu/i.test(c) && clean[k]!==null && /^\d{1,3}$/.test(String(clean[k]).trim())){ clean[k] = null; rowNo++; } });
       const id = idOf(clean);
-      const target = id ? state.rows.find(r => idOf(r.data)===id) : state.rows.find(r => r.id===prev[i]);
+      const filled = keys.filter(k => clean[k]!==null);
+      if(!id && !filled.length) return; // nothing readable in this row
+      let target = null;
+      if(id){
+        target = state.rows.find(r => sameSite(r.data, clean));
+        if(target) cursor = state.rows.indexOf(target)+1;
+      } else {
+        // No site ID: fill the next row whose cells for these columns are still empty (never overwrite)
+        for(let p=cursor; p<state.rows.length; p++){
+          if(filled.every(k => isEmpty(state.rows[p].data[k]))){ target = state.rows[p]; cursor = p+1; break; }
+        }
+      }
       if(target){
-        for(const k of keys){ if(clean[k]!==null) target.data[k] = clean[k]; }
+        // Never overwrite: only fill cells that are still empty
+        const filledC = [], keptC = [];
+        keys.forEach((k,ci)=>{
+          if(clean[k]===null) return;
+          if(isEmpty(target.data[k])){ target.data[k] = clean[k]; filledC.push([lab(ci), clean[k]]); }
+          else if(String(target.data[k])!==String(clean[k])){ kept++; keptC.push([lab(ci), target.data[k], clean[k]]); }
+        });
+        changes.push({id: target.id, isNew:false, filled:filledC, kept:keptC});
         merged++; touched.push(target.id);
       } else {
         const row = { id: base+"-"+i, data: clean, addedAt: base+i };
         state.rows.push(row); added++; touched.push(row.id);
+        changes.push({id: row.id, isNew:true, filled: keys.map((k,ci)=>[lab(ci), clean[k]]).filter(x=>x[1]!==null), kept:[]});
       }
       for(const k of Object.keys(obj||{})){ if(!askKeys.includes(k)) dropped++; }
     });
     state.lastBatch = touched;
     saveRows(); renderTable();
 
-    setStatus(`Extracted ${data.length} row${data.length>1?"s":""}: ${added} new, ${merged} merged into existing row${merged===1?"":"s"}.`, false, true);
-    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nNew rows: ${added}\nMerged into existing rows: ${merged}\nSource fields with no matching column (dropped): ${dropped}\nRaw model reply (first row shown):\n${JSON.stringify(data[0], null, 2)}`);
+    setStatus(`Extracted ${data.length} row${data.length>1?"s":""}: ${added} new, ${merged} merged into existing row${merged===1?"":"s"}.` + (kept ? ` ${kept} cell${kept>1?"s":""} already had a different value and ${kept>1?"were":"was"} kept (not overwritten).` : ""), false, true);
+    const lines = changes.map(c=>{
+      const n = state.rows.findIndex(r=>r.id===c.id)+1;
+      return [`Row ${n} — ${c.isNew ? "new row" : "existing row"}`]
+        .concat(c.filled.map(([l,v])=>`  + ${l}: ${v}`))
+        .concat(c.kept.map(([l,o,v])=>`  = ${l}: kept ${o} (ignored ${v})`)).join("\n");
+    }).join("\n\n") || "(no values were filled)";
+    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nNew rows: ${added}\nMerged into existing rows: ${merged}\nExisting values kept (not overwritten): ${kept}\nRow numbers ignored in UNIQUE ID columns: ${rowNo}\nSource fields with no matching column (dropped): ${dropped}\n\nChanges by row (+ filled, = kept existing):\n${lines}`);
     clearStaged();
   } catch(e){
     const code = e && e.code;
@@ -481,6 +521,7 @@ function downloadCSV(){
 function resetTable(){
   if(!state.rows.length) return;
   if(!confirm(`Delete all ${state.rows.length} row(s) for ${state.schemaKey}? This can't be undone.`)) return;
+  pushUndo("table reset");
   state.rows = []; state.lastBatch = []; saveRows(); renderTable();
   setStatus("Table reset.", false, true);
 }
@@ -515,6 +556,26 @@ async function init(){
 
   loadRows();
 }
+// ---------- Undo (pastes, AI edits, row deletes, resets) ----------
+function updateUndoBtn(){
+  const b = document.getElementById("undoBtn"); if(!b) return;
+  const st = state.undoStack || [];
+  b.disabled = !st.length;
+  b.textContent = st.length ? "Undo " + st[st.length-1].label : "Undo";
+}
+function pushUndo(label){
+  state.undoStack = state.undoStack || [];
+  state.undoStack.push({label, rows: JSON.stringify(state.rows), lastBatch: (state.lastBatch||[]).slice()});
+  if(state.undoStack.length > 10) state.undoStack.shift();
+  updateUndoBtn();
+}
+function undoLast(){
+  const u = (state.undoStack || []).pop(); if(!u) return;
+  state.rows = JSON.parse(u.rows); state.lastBatch = u.lastBatch;
+  saveRows(); renderTable(); updateUndoBtn();
+  setStatus(`Undid: ${u.label}.`, false, true);
+}
+
 // ---------- Ask AI to revise the table ----------
 function aiSay(msg, err){ const el = document.getElementById("aiStatus"); el.textContent = msg; el.className = "status" + (err ? " err" : ""); }
 async function askAI(){
@@ -568,7 +629,7 @@ INSTRUCTION: ${text}`;
 }
 function applyEdits(){
   const edits = state.pendingEdits || [];
-  state.undoSnapshot = JSON.stringify(state.rows);
+  pushUndo("AI edit");
   const del = new Set();
   for(const e of edits){
     if(e.op==="delete_row"){ del.add(e.row-1); continue; }
@@ -578,12 +639,14 @@ function applyEdits(){
   state.lastBatch = []; state.pendingEdits = [];
   saveRows(); renderTable();
   document.getElementById("aiPreview").innerHTML = `<div class="ai-prev">Applied ${edits.length} change${edits.length>1?"s":""}. <button class="ghost" id="aiUndo">Undo</button></div>`;
-  document.getElementById("aiUndo").onclick = ()=>{
-    state.rows = JSON.parse(state.undoSnapshot); state.lastBatch = [];
-    saveRows(); renderTable(); document.getElementById("aiPreview").innerHTML = ""; aiSay("Undone.");
-  };
+  document.getElementById("aiUndo").onclick = ()=>{ undoLast(); document.getElementById("aiPreview").innerHTML = ""; };
   aiSay("");
 }
+document.getElementById("undoBtn").onclick = undoLast;
+document.addEventListener("keydown", e=>{
+  const t = e.target && e.target.tagName;
+  if((e.metaKey||e.ctrlKey) && !e.shiftKey && e.key.toLowerCase()==="z" && t!=="TEXTAREA" && t!=="INPUT" && t!=="SELECT"){ e.preventDefault(); undoLast(); }
+});
 document.getElementById("aiBtn").onclick = askAI;
 document.getElementById("aiPrompt").addEventListener("keydown", e=>{ if((e.metaKey||e.ctrlKey) && e.key==="Enter") askAI(); });
 
