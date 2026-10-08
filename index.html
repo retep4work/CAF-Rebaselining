@@ -521,7 +521,7 @@ function downloadCSV(){
 function resetTable(){
   if(!state.rows.length) return;
   if(!confirm(`Delete all ${state.rows.length} row(s) for ${state.schemaKey}? This can't be undone.`)) return;
-  pushUndo("table reset");
+  pushUndo("table reset", "Restore table data");
   state.rows = []; state.lastBatch = []; saveRows(); renderTable();
   setStatus("Table reset.", false, true);
 }
@@ -561,11 +561,11 @@ function updateUndoBtn(){
   const b = document.getElementById("undoBtn"); if(!b) return;
   const st = state.undoStack || [];
   b.disabled = !st.length;
-  b.textContent = st.length ? "Undo " + st[st.length-1].label : "Undo";
+  b.textContent = st.length ? (st[st.length-1].btn || "Undo " + st[st.length-1].label) : "Undo";
 }
-function pushUndo(label){
+function pushUndo(label, btn){
   state.undoStack = state.undoStack || [];
-  state.undoStack.push({label, rows: JSON.stringify(state.rows), lastBatch: (state.lastBatch||[]).slice()});
+  state.undoStack.push({label, btn, rows: JSON.stringify(state.rows), lastBatch: (state.lastBatch||[]).slice()});
   if(state.undoStack.length > 10) state.undoStack.shift();
   updateUndoBtn();
 }
@@ -573,7 +573,7 @@ function undoLast(){
   const u = (state.undoStack || []).pop(); if(!u) return;
   state.rows = JSON.parse(u.rows); state.lastBatch = u.lastBatch;
   saveRows(); renderTable(); updateUndoBtn();
-  setStatus(`Undid: ${u.label}.`, false, true);
+  setStatus(u.label==="table reset" ? "Table data restored." : `Undid: ${u.label}.`, false, true);
 }
 
 // ---------- Ask AI to revise the table ----------
