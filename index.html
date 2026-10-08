@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>CAF Site Data Extractor</title>
+<script>try{document.documentElement.setAttribute("data-theme", localStorage.getItem("caf_theme")||"dark");}catch(e){document.documentElement.setAttribute("data-theme","dark");}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
 :root{
@@ -11,10 +12,24 @@
   --bg:#0F1115; --panel:#171B22; --line:#2A303A; --line-soft:#232933;
   --text:#E6E9EE; --text-dim:#9AA3B2; --accent:#A78BFA; --accent-dim:#6D5BB5;
   --teal:#4ADE80; --red:#F87171;
+  --on-accent:#0F1115; --hover:rgba(167,139,250,0.08); --paste-bg:#1A1826;
+  --th-bg:#1D222B; --th-fg:#AEB6C4; --zebra:#1A1F27;
+  --gs-bg:#2A303A; --gs-fg:#C9CFD8; --ge-bg:#1E3A5F; --ge-fg:#A9CBFF;
+  --gg-bg:#14402A; --gg-fg:#8FE5AE; --gp-bg:#4A2A12; --gp-fg:#FFB77A; --gf-bg:#33264F; --gf-fg:#D3C2FF;
   --mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --sans:"IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --bg:#F4F6F8; --panel:#FFFFFF; --line:#D3D9E0; --line-soft:#E3E7EC;
+  --text:#1F2937; --text-dim:#5B6472; --accent:#4F46E5; --accent-dim:#A5B4FC;
+  --teal:#15803D; --red:#B42318;
+  --on-accent:#FFFFFF; --hover:rgba(79,70,229,0.07); --paste-bg:#F3F4FF;
+  --th-bg:#F3F5F7; --th-fg:#374151; --zebra:#F9FAFB;
+  --gs-bg:#E5E7EB; --gs-fg:#374151; --ge-bg:#DBEAFE; --ge-fg:#1E40AF;
+  --gg-bg:#DCFCE7; --gg-fg:#166534; --gp-bg:#FFEDD5; --gp-fg:#9A3412; --gf-bg:#EDE9FE; --gf-fg:#5B21B6;
 }
 *{box-sizing:border-box;}
 html,body{height:100%; margin:0;}
@@ -38,7 +53,7 @@ select, input[type=file]{
 }
 select:focus, input:focus, button:focus{outline:2px solid var(--accent); outline-offset:1px;}
 button{
-  background:var(--accent); color:#0F1115; border:none; border-radius:3px;
+  background:var(--accent); color:var(--on-accent); border:none; border-radius:3px;
   padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer; font-family:var(--sans);
 }
 button:disabled{background:var(--line); color:var(--text-dim); cursor:not-allowed;}
@@ -67,7 +82,7 @@ table{border-collapse:collapse; width:max-content; min-width:100%; font-family:v
 th,td{padding:7px 10px; border-bottom:1px solid var(--line-soft); border-right:1px solid var(--line-soft); white-space:nowrap; text-align:left;}
 th{background:var(--line-soft); color:var(--text-dim); font-weight:600; position:sticky; top:0;}
 td.blank{color:var(--text-dim); font-style:italic;}
-tr:hover td{background:rgba(167,139,250,0.08);}
+tr:hover td{background:var(--hover);}
 td.del{cursor:pointer; color:var(--text-dim); font-family:var(--sans);}
 td.del:hover{color:var(--red);}
 
@@ -90,27 +105,30 @@ footer{margin-top:28px; font-size:11.5px; color:var(--text-dim); border-top:1px 
 /* ---- Refined dark / violet ---- */
 .panel{border-radius:10px; padding:20px 22px;}
 .step{display:flex; align-items:center; gap:10px; margin:0 0 14px; font-size:15px; font-weight:600;}
-.num{width:24px; height:24px; border-radius:50%; background:var(--accent); color:#0F1115; font-size:13px; display:flex; align-items:center; justify-content:center;}
+.num{width:24px; height:24px; border-radius:50%; background:var(--accent); color:var(--on-accent); font-size:13px; display:flex; align-items:center; justify-content:center;}
 select, input[type=file]{border-radius:6px; min-height:40px;}
 button{border-radius:6px; min-height:40px;}
 #extractBtn{padding:0 28px; font-size:14px;}
 #aiApply{background:#15803D; color:#fff;}
-.paste-zone{border-color:var(--accent-dim); background:#1A1826; border-radius:8px; color:var(--text);}
+.paste-zone{border-color:var(--accent-dim); background:var(--paste-bg); border-radius:8px; color:var(--text);}
 .table-scroll{border-radius:8px;}
-th{background:#1D222B; color:#AEB6C4;}
+th{background:var(--th-bg); color:var(--th-fg);}
 th.grp{color:var(--text);}
-th.grp.gs{background:#2A303A; color:#C9CFD8;}
-th.grp.ge{background:#1E3A5F; color:#A9CBFF;}
-th.grp.gg{background:#14402A; color:#8FE5AE;}
-th.grp.gp{background:#4A2A12; color:#FFB77A;}
-th.grp.gf{background:#33264F; color:#D3C2FF;}
-tbody tr:nth-child(even) td{background:#1A1F27;}
+th.grp.gs{background:var(--gs-bg); color:var(--gs-fg);}
+th.grp.ge{background:var(--ge-bg); color:var(--ge-fg);}
+th.grp.gg{background:var(--gg-bg); color:var(--gg-fg);}
+th.grp.gp{background:var(--gp-bg); color:var(--gp-fg);}
+th.grp.gf{background:var(--gf-bg); color:var(--gf-fg);}
+tbody tr:nth-child(even) td{background:var(--zebra);}
 button:disabled{opacity:.45; cursor:default;}
+header{position:relative;}
+.theme-btn{position:absolute; top:0; right:0; padding:0 14px;}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
+    <button class="ghost theme-btn" id="themeBtn" title="Switch between light and dark theme">☀ Light</button>
     <h1>CAF Site Data Extractor</h1>
     <p>Upload a vendor CAF file → AI reads it against the exact reference header → rows append to a running table.</p>
   </header>
@@ -643,6 +661,16 @@ function applyEdits(){
   document.getElementById("aiUndo").onclick = ()=>{ undoLast(); document.getElementById("aiPreview").innerHTML = ""; };
   aiSay("");
 }
+function applyTheme(t){
+  document.documentElement.setAttribute("data-theme", t);
+  document.getElementById("themeBtn").textContent = t==="dark" ? "☀ Light" : "☾ Dark";
+}
+document.getElementById("themeBtn").onclick = ()=>{
+  const t = document.documentElement.getAttribute("data-theme")==="dark" ? "light" : "dark";
+  try{ localStorage.setItem("caf_theme", t); }catch(e){}
+  applyTheme(t);
+};
+applyTheme(document.documentElement.getAttribute("data-theme") || "dark");
 document.getElementById("undoBtn").onclick = undoLast;
 document.addEventListener("keydown", e=>{
   const t = e.target && e.target.tagName;
