@@ -410,7 +410,7 @@ ${JSON.stringify(askKeys)}
 
 ${rules}
 
-Reply with ONLY a JSON array of objects, one object per site/row found in the image. Each object may use only these keys: ${JSON.stringify(askKeys)}. Include a key ONLY when its cell is visible and has a value; OMIT every blank, unreadable or not-visible key (do not write null). No prose, no markdown fences, just the JSON array.`;
+Reply with ONLY a JSON array of objects, one object for EVERY table row in the image, top to bottom, in order, INCLUDING rows that are completely blank (for a fully blank row write an empty object {}). Never skip, merge, or reorder rows: the array length must equal the number of table rows you can see. Text that wraps onto several lines inside one cell is still ONE cell in ONE row. Each object may use only these keys: ${JSON.stringify(askKeys)}. Include a key ONLY when its cell is visible and has a value; OMIT every blank, unreadable or not-visible key (do not write null). No prose, no markdown fences, just the JSON array.`;
 
     const b64 = await imageToBase64(file);
     const t0 = Date.now(); setStatus("Reading the image… 0s");
@@ -427,31 +427,52 @@ Reply with ONLY a JSON array of objects, one object per site/row found in the im
     const cmp = (list,a,b)=>{ let hit=null; for(const k of list){ const x=a&&a[k], y=b&&b[k]; if(blank(x)||blank(y)) continue; if(String(x).trim().toLowerCase()!==String(y).trim().toLowerCase()) return false; hit=true; } return hit; };
     const sameSite = (a,b)=>{ const r = cmp(idKeys1,a,b); return r!==null ? r : (cmp(idKeys2,a,b)===true); };
     const isEmpty = v => v===null || v===undefined || String(v).trim()==="";
-    let cursor = 0; // table position to search from, so incoming rows stay in order
+    // ID-less rows line up by POSITION, starting right after the last table row that already has values in this
+    // block. Blank rows in the image count as rows, so everything stays aligned with the site-details rows.
+    const extentKeys = partMode ? pkeys : pkeys.filter((k,j)=> data.some(o => o && !blank(o[askKeys[j]])));
+    let lastFilled = -1;
+    state.rows.forEach((r,p)=>{ if(extentKeys.some(k => !isEmpty(r.data[k]))) lastFilled = p; });
+    const startRow = lastFilled + 1;
+    let blankRows = 0;
     const base = Date.now();
     let added=0, merged=0, dropped=0, kept=0, rowNo=0; const touched=[]; const changes=[];
     const segsAll = SEGMENTS[state.schemaKey] || [];
     const lab = ci => { const sg = segsAll.find(x=>ci>=x[0] && ci<x[1]); return cols[ci] + (sg ? ` [${sg[2]}]` : ""); };
     pushUndo("last paste");
 
-    data.forEach((obj,i)=>{
+    const cleaned = data.map(obj=>{
       const clean = {};
       for(const k of keys) clean[k] = null;
       pkeys.forEach((k,j)=>{ const v = obj ? obj[askKeys[j]] : undefined; if(v!==undefined && v!=="") clean[k] = v; });
       // Safety net: a short plain number (1, 2, 3…) in a UNIQUE ID column is a row counter, not an ID
       cols.forEach((c,ci)=>{ const k = keys[ci]; if(/uniqu/i.test(c) && clean[k]!==null && /^\d{1,3}$/.test(String(clean[k]).trim())){ clean[k] = null; rowNo++; } });
-      const id = idOf(clean);
-      const filled = keys.filter(k => clean[k]!==null);
-      if(!id && !filled.length) return; // nothing readable in this row
+      return { obj, clean, id: idOf(clean), filled: keys.filter(k => clean[k]!==null) };
+    });
+    const idRows = cleaned.filter(c => c.id);
+    const allNew = idRows.length>0 && idRows.every(c => !state.rows.some(r => sameSite(r.data, c.clean)));
+    let lastReal = -1; cleaned.forEach((c,i)=>{ if(c.filled.length) lastReal = i; });
+
+    cleaned.forEach(({obj, clean, id, filled}, i)=>{
+      const pos = startRow + i; // table row this image row lines up with
+      if(!filled.length){
+        blankRows++;
+        if(i > lastReal) return; // trailing blank rows: ignore
+        if(allNew){
+          // Site-details image with blank rows: keep a blank row so later blocks stay aligned
+          state.rows.push({ id: base+"-b"+i, data: Object.fromEntries(keys.map(k=>[k,null])), addedAt: base+i });
+          changes.push({pos: state.rows.length-1, blank:true});
+        } else if(!id){ changes.push({pos, blank:true}); }
+        return;
+      }
       let target = null;
       if(id){
         target = state.rows.find(r => sameSite(r.data, clean));
-        if(target) cursor = state.rows.indexOf(target)+1;
       } else {
-        // No site ID: fill the next row whose cells for these columns are still empty (never overwrite)
-        for(let p=cursor; p<state.rows.length; p++){
-          if(filled.every(k => isEmpty(state.rows[p].data[k]))){ target = state.rows[p]; cursor = p+1; break; }
+        // No site ID: line up by position (never overwrite; only empty cells get filled)
+        while(state.rows.length < pos && state.rows.length < 500){
+          state.rows.push({ id: base+"-pad"+state.rows.length, data: Object.fromEntries(keys.map(k=>[k,null])), addedAt: base });
         }
+        target = state.rows[pos] || null;
       }
       if(target){
         // Never overwrite: only fill cells that are still empty
@@ -473,14 +494,15 @@ Reply with ONLY a JSON array of objects, one object per site/row found in the im
     state.lastBatch = touched;
     saveRows(); renderTable();
 
-    setStatus(`Extracted ${data.length} row${data.length>1?"s":""}: ${added} new, ${merged} merged into existing row${merged===1?"":"s"}.` + (kept ? ` ${kept} cell${kept>1?"s":""} already had a different value and ${kept>1?"were":"was"} kept (not overwritten).` : ""), false, true);
+    setStatus(`Read ${data.length} row${data.length>1?"s":""} from the image${blankRows ? ` (${blankRows} blank)` : ""}: ${added} new, ${merged} merged into existing row${merged===1?"":"s"}.` + (kept ? ` ${kept} cell${kept>1?"s":""} already had a different value and ${kept>1?"were":"was"} kept (not overwritten).` : ""), false, true);
     const lines = changes.map(c=>{
+      if(c.blank) return `Row ${c.pos+1} — blank row in the image (left empty)`;
       const n = state.rows.findIndex(r=>r.id===c.id)+1;
       return [`Row ${n} — ${c.isNew ? "new row" : "existing row"}`]
         .concat(c.filled.map(([l,v])=>`  + ${l}: ${v}`))
         .concat(c.kept.map(([l,o,v])=>`  = ${l}: kept ${o} (ignored ${v})`)).join("\n");
     }).join("\n\n") || "(no values were filled)";
-    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nNew rows: ${added}\nMerged into existing rows: ${merged}\nExisting values kept (not overwritten): ${kept}\nRow numbers ignored in UNIQUE ID columns: ${rowNo}\nSource fields with no matching column (dropped): ${dropped}\n\nChanges by row (+ filled, = kept existing):\n${lines}`);
+    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nNew rows: ${added}\nMerged into existing rows: ${merged}\nBlank rows kept as spacing: ${blankRows}\nExisting values kept (not overwritten): ${kept}\nRow numbers ignored in UNIQUE ID columns: ${rowNo}\nSource fields with no matching column (dropped): ${dropped}\n\nChanges by row (+ filled, = kept existing):\n${lines}`);
     clearStaged();
   } catch(e){
     const code = e && e.code;
