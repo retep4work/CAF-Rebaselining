@@ -379,6 +379,53 @@ async function callApi(prompt, imageB64, retry=true){
   return out.data;
 }
 
+// ---------- Count the table's rows from its grid lines (AI models miscount runs of blank rows) ----------
+// Returns an array (top→bottom) of true = row has text, false = blank row; or null if no clear grid was found.
+async function detectBands(file){
+  try{
+    const img = await new Promise((res,rej)=>{ const im = new Image(); im.onload = ()=>res(im); im.onerror = rej; im.src = URL.createObjectURL(file); });
+    const sc = Math.min(1, 1400/Math.max(img.width, img.height));
+    const w = Math.round(img.width*sc), h = Math.round(img.height*sc);
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    const g = c.getContext("2d", {willReadFrequently:true}); g.drawImage(img, 0, 0, w, h);
+    const d = g.getImageData(0,0,w,h).data;
+    const L = new Float32Array(w*h);
+    for(let i=0;i<w*h;i++){ L[i] = 0.299*d[i*4] + 0.587*d[i*4+1] + 0.114*d[i*4+2]; }
+    const isLine = new Array(h).fill(false); let lineRows = 0;
+    for(let y=0;y<h;y++){ let dark=0; for(let x=0;x<w;x++){ if(L[y*w+x]<150) dark++; } if(dark>0.7*w){ isLine[y]=true; lineRows++; } }
+    if(!lineRows || lineRows>0.4*h) return null;
+    const groups = []; let y = 0;
+    while(y<h){ if(isLine[y]){ const st=y; while(y<h && isLine[y]) y++; groups.push([st,y-1]); } else y++; }
+    const edges = [[-1,-1]].concat(groups, [[h,h]]);
+    const flags = [];
+    for(let i=0;i<edges.length-1;i++){
+      const y0 = edges[i][1]+1, y1 = edges[i+1][0]-1;
+      if(y1-y0+1 < 8) continue;
+      const a = (y1-y0>6) ? y0+2 : y0, b = (y1-y0>6) ? y1-1 : y1+1;
+      const bh = b-a; if(bh<=0) continue;
+      const colDark = new Int32Array(w); const rowsDark = [];
+      for(let yy=a; yy<b; yy++){ for(let x=0;x<w;x++){ if(L[yy*w+x]<140) colDark[x]++; } }
+      let ink = 0;
+      for(let x=0;x<w;x++){ if(colDark[x] <= 0.8*bh) ink += colDark[x]; } // skip vertical grid lines
+      flags.push(ink >= 10);
+    }
+    return (flags.length>=3 && flags.length<=400) ? flags : null;
+  }catch(e){ return null; }
+}
+// Rebuild the row list so blank rows sit exactly where the grid says they are.
+function realign(data, flags){
+  if(!flags) return {used:false};
+  const blankE = o => !o || !Object.keys(o).some(k => o[k]!==null && o[k]!==undefined && String(o[k]).trim()!=="");
+  const real = data.filter(o => !blankE(o));
+  const inkIdx = []; flags.forEach((f,i)=>{ if(f) inkIdx.push(i); });
+  const H = inkIdx.length - real.length;          // header rows = text bands the AI did not return as data
+  if(H<0 || H>4) return {used:false};
+  const startBand = H>0 ? inkIdx[H-1]+1 : 0;
+  const out = []; let p = 0;
+  for(const f of flags.slice(startBand)){ out.push(f ? real[p++] : {}); }
+  return {used:true, data:out, headers:H, bands:flags.length};
+}
+
 async function extract(){
   const file = state.stagedFile;
   if(!file){ setStatus("Choose or paste an image first.", true); return; }
@@ -413,10 +460,17 @@ ${rules}
 Reply with ONLY a JSON array of objects, one object for EVERY table row in the image, top to bottom, in order, INCLUDING rows that are completely blank (for a fully blank row write an empty object {}). Never skip, merge, or reorder rows: the array length must equal the number of table rows you can see. Text that wraps onto several lines inside one cell is still ONE cell in ONE row. Each object may use only these keys: ${JSON.stringify(askKeys)}. Include a key ONLY when its cell is visible and has a value; OMIT every blank, unreadable or not-visible key (do not write null). No prose, no markdown fences, just the JSON array.`;
 
     const b64 = await imageToBase64(file);
+    const bandsP = detectBands(file);
     const t0 = Date.now(); setStatus("Reading the image… 0s");
     tick = setInterval(()=> setStatus(`Reading the image… ${Math.round((Date.now()-t0)/1000)}s`), 1000);
-    const data = await callApi(prompt, b64);
+    let data = await callApi(prompt, b64);
     if(!Array.isArray(data) || !data.length) throw {code:"empty_completion"};
+    // Use the table grid to fix the blank-row count (the AI often skips or miscounts blank rows)
+    const aiRows = data.length;
+    const re = realign(data, await bandsP);
+    if(re.used) data = re.data;
+    const fixNote = re.used && aiRows!==data.length ? ` — row count corrected from ${aiRows} to ${data.length} using the table grid` : "";
+    const alignInfo = re.used ? `table grid detected (${re.bands} bands, ${re.headers} header row${re.headers===1?"":"s"}); AI returned ${aiRows} rows, using ${data.length}` : `table grid not detected, using the AI's ${aiRows} rows as returned`;
 
     // Rows with no site identifier are treated as the NEXT PART of the previous rows (merged by position)
     const idKeys = keys.filter((k,i)=>/site\s?id|site name|pla id/i.test(cols[i]));
@@ -494,7 +548,7 @@ Reply with ONLY a JSON array of objects, one object for EVERY table row in the i
     state.lastBatch = touched;
     saveRows(); renderTable();
 
-    setStatus(`Read ${data.length} row${data.length>1?"s":""} from the image${blankRows ? ` (${blankRows} blank)` : ""}: ${added} new, ${merged} merged into existing row${merged===1?"":"s"}.` + (kept ? ` ${kept} cell${kept>1?"s":""} already had a different value and ${kept>1?"were":"was"} kept (not overwritten).` : ""), false, true);
+    setStatus(`Read ${data.length} row${data.length>1?"s":""} from the image${blankRows ? ` (${blankRows} blank)` : ""}${fixNote}: ${added} new, ${merged} merged into existing row${merged===1?"":"s"}.` + (kept ? ` ${kept} cell${kept>1?"s":""} already had a different value and ${kept>1?"were":"was"} kept (not overwritten).` : ""), false, true);
     const lines = changes.map(c=>{
       if(c.blank) return `Row ${c.pos+1} — blank row in the image (left empty)`;
       const n = state.rows.findIndex(r=>r.id===c.id)+1;
@@ -502,7 +556,7 @@ Reply with ONLY a JSON array of objects, one object for EVERY table row in the i
         .concat(c.filled.map(([l,v])=>`  + ${l}: ${v}`))
         .concat(c.kept.map(([l,o,v])=>`  = ${l}: kept ${o} (ignored ${v})`)).join("\n");
     }).join("\n\n") || "(no values were filled)";
-    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nNew rows: ${added}\nMerged into existing rows: ${merged}\nBlank rows kept as spacing: ${blankRows}\nExisting values kept (not overwritten): ${kept}\nRow numbers ignored in UNIQUE ID columns: ${rowNo}\nSource fields with no matching column (dropped): ${dropped}\n\nChanges by row (+ filled, = kept existing):\n${lines}`);
+    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nNew rows: ${added}\nMerged into existing rows: ${merged}\nBlank rows kept as spacing: ${blankRows}\nExisting values kept (not overwritten): ${kept}\nRow numbers ignored in UNIQUE ID columns: ${rowNo}\nSource fields with no matching column (dropped): ${dropped}\nRow alignment: ${alignInfo}\n\nChanges by row (+ filled, = kept existing):\n${lines}`);
     clearStaged();
   } catch(e){
     const code = e && e.code;
