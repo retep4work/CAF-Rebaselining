@@ -362,21 +362,41 @@ function imageToBase64(file, maxDim=2000){
   });
 }
 
-async function callApi(prompt, imageB64, retry=true){
-  const res = await fetch("/api/extract", {
-    method:"POST",
-    headers:{ "Content-Type":"application/json", "x-access-code": localStorage.getItem("caf_access_code") || "" },
-    body: JSON.stringify({ prompt, image: imageB64 || undefined, mediaType: "image/jpeg" })
-  });
-  if(res.status===401 && retry){
-    const code = window.prompt("Enter access code:");
-    if(code){ localStorage.setItem("caf_access_code", code); return callApi(prompt, imageB64, false); }
+const sleepMs = ms => new Promise(r => setTimeout(r, ms));
+// Calls the server; on timeouts / busy errors it retries by itself and reports "attempt n of 3" through note().
+async function callApi(prompt, imageB64, retry=true, note){
+  const MAX = 3;
+  for(let attempt=1; attempt<=MAX; attempt++){
+    if(note) note(`attempt ${attempt} of ${MAX}`);
+    let res;
+    try{
+      res = await fetch("/api/extract", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json", "x-access-code": localStorage.getItem("caf_access_code") || "" },
+        body: JSON.stringify({ prompt, image: imageB64 || undefined, mediaType: "image/jpeg" })
+      });
+    }catch(err){
+      if(attempt===MAX) throw {code:"network", attempts:attempt};
+      if(note) note(`attempt ${attempt} of ${MAX} failed (network) — retrying`);
+      await sleepMs(2500*attempt); continue;
+    }
+    if(res.status===401){
+      if(retry){
+        const code = window.prompt("Enter access code:");
+        if(code){ localStorage.setItem("caf_access_code", code); return callApi(prompt, imageB64, false, note); }
+      }
+      throw {code:"unauthorized"};
+    }
+    if([429,500,502,503,504].includes(res.status) && attempt<MAX){
+      const wait = res.status===429 ? 8000 : 2500*attempt;
+      if(note) note(`attempt ${attempt} of ${MAX} failed (${res.status}) — retrying in ${Math.round(wait/1000)}s`);
+      await sleepMs(wait); continue;
+    }
+    const out = await res.json().catch(()=>({}));
+    if(res.status===429) throw {code:"rate_limited", attempts:attempt};
+    if(!res.ok) throw {code: out.error || ("http_"+res.status), text: out.detail, attempts:attempt};
+    return out.data;
   }
-  if(res.status===401) throw {code:"unauthorized"};
-  if(res.status===429) throw {code:"rate_limited"};
-  const out = await res.json().catch(()=>({}));
-  if(!res.ok) throw {code: out.error || ("http_"+res.status), text: out.detail};
-  return out.data;
 }
 
 // ---------- Count the table's rows from its grid lines (AI models miscount runs of blank rows) ----------
@@ -461,9 +481,9 @@ Reply with ONLY a JSON array of objects, one object for EVERY table row in the i
 
     const b64 = await imageToBase64(file);
     const bandsP = detectBands(file);
-    const t0 = Date.now(); setStatus("Reading the image… 0s");
-    tick = setInterval(()=> setStatus(`Reading the image… ${Math.round((Date.now()-t0)/1000)}s`), 1000);
-    let data = await callApi(prompt, b64);
+    const t0 = Date.now(); let label = "Reading the image"; setStatus("Reading the image… 0s");
+    tick = setInterval(()=> setStatus(`${label}… ${Math.round((Date.now()-t0)/1000)}s`), 1000);
+    let data = await callApi(prompt, b64, true, m => { label = "Reading the image (" + m + ")"; });
     if(!Array.isArray(data) || !data.length) throw {code:"empty_completion"};
     // Use the table grid to fix the blank-row count (the AI often skips or miscounts blank rows)
     const aiRows = data.length;
@@ -567,7 +587,8 @@ Reply with ONLY a JSON array of objects, one object for EVERY table row in the i
       invalid_json: "The reply wasn't valid data — try again, or a clearer image.",
       empty_completion: "Nothing was extracted — try a clearer image.",
       server_not_configured: "Server is missing GEMINI_API_KEY (set it in Vercel settings).",
-    }[code] || ("Extraction failed" + (code?` (${code})`:"") + ".");
+      network: "Couldn't reach the server — check your connection and try again.",
+    }[code] || ("Extraction failed" + (code?` (${code})`:"") + (e && e.attempts>1 ? ` after ${e.attempts} attempts` : "") + ".");
     setStatus(msg, true);
     if(e && e.text) setLog("Details:\n"+e.text);
   } finally {
@@ -699,7 +720,7 @@ ${JSON.stringify(rows)}
 INSTRUCTION: ${text}`;
   const btn = document.getElementById("aiBtn"); btn.disabled = true; aiSay("Thinking…");
   try{
-    const out = await callApi(prompt, null);
+    const out = await callApi(prompt, null, true, m => aiSay('Thinking (' + m + ')…'));
     const list = Array.isArray(out) ? out : (out && Array.isArray(out.edits) ? out.edits : []);
     const valid = new Set(keys);
     const edits = list.filter(e => e && Number.isInteger(+e.row) && e.row>=1 && e.row<=state.rows.length &&
