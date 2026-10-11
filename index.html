@@ -294,7 +294,7 @@ function switchSchema(){
 const LS_KEY = k => "caf_rows_" + k;
 function saveRows(){ localStorage.setItem(LS_KEY(state.schemaKey), JSON.stringify(state.rows)); }
 function loadRows(){
-  state.lastBatch = []; state.lastBlocks = []; state.undoStack = []; updateUndoBtn();
+  state.lastBatch = []; state.lastBlocks = []; state.lastProfile = {}; state.undoStack = []; updateUndoBtn();
   try{ state.rows = JSON.parse(localStorage.getItem(LS_KEY(state.schemaKey)) || "[]"); }
   catch(e){ state.rows = []; }
   renderTable();
@@ -470,6 +470,7 @@ async function extract(){
 9. The image may show only SOME of the columns (a partial screenshot of a wide table). Fill only the columns visible in the image and leave out every other key. Never guess or copy values from other columns.
 11. "PLA ID", "GT Site ID" and "Site ID" are the same field. If the image shows any of them, put the value in whichever of those columns exists in the target list.
 12. A row-number column (headed "NO.", "No", "#" or similar, with values 1, 2, 3…) is only a row counter. NEVER copy it into any column, and in particular NEVER into UNIQUE_ID / UNIQUIE_ID / UNIQUE ID. Fill a unique-ID column only when the image has a column explicitly headed as a unique ID or request reference; otherwise omit it.
+13. Application numbers shaped like "APP-020430" belong in the "Application" column. Use "CAF Refence" ONLY when the image has a column explicitly headed CAF Reference. If the image has no header row, assign columns left to right but check each value's shape (for example PH090169-style codes are tower site IDs and MIN552-style codes are GT site IDs, when those columns exist) so no value ends up one column off.
 ` + (partMode
   ? `10. This image shows ONE part of the form: the "${seg ? seg[2] : ''}" part (it may have a title such as EPA, GROUND SPACE or POWER). The keys listed above are exactly that group, in left-to-right order. Match each visible header to the key at the same position; do not fill keys that are not visible.`
   : `10. Every key ends with its block name in square brackets, e.g. "COST [EPA]" and "COST [GROUND SPACE]" are different columns. In the image each block has a title bar above its column headers (SITE DETAILS, EPA, GROUND SPACE (may appear as GRD), POWER (may appear as PWR), FACILITY UPGRADE, CHANGE REQUEST REMARKS…). Read the title bar and use ONLY the keys of that block for the columns beneath it. An image may show several blocks side by side: fill each block's keys under its own title bar. If no title bar is visible, use the column headers and their left-to-right order to choose the block.`);
@@ -539,7 +540,7 @@ ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JS
     segsW.forEach((sg,si)=>{ let lf=-1; state.rows.forEach((r,p)=>{ for(let ci=sg[0]; ci<sg[1]; ci++){ if(!isEmpty(r.data[keys[ci]])){ lf=p; break; } } }); startBySeg[si]=lf+1; });
     const blankRow = id => ({ id, data: Object.fromEntries(keys.map(k=>[k,null])), addedAt: base });
     const changeMap = new Map();
-    let added=0, merged=0, dropped=0, kept=0, rowNo=0; const touched=[]; const changes=[];
+    let added=0, merged=0, dropped=0, kept=0, rowNo=0, appFixed=0; const touched=[]; const changes=[];
     const segsAll = SEGMENTS[state.schemaKey] || [];
     const lab = ci => { const sg = segsAll.find(x=>ci>=x[0] && ci<x[1]); return cols[ci] + (sg ? ` [${sg[2]}]` : ""); };
     pushUndo("last paste");
@@ -548,13 +549,50 @@ ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JS
       const clean = {};
       for(const k of keys) clean[k] = null;
       pkeys.forEach((k,j)=>{ const v = obj ? obj[askKeys[j]] : undefined; if(v!==undefined && v!=="") clean[k] = v; });
+      // Safety net: an application number (APP-123456) must sit in "Application". If it landed in another column of the
+      // same block while "Application" holds something else, move it and put the displaced value in AREA (or swap).
+      const appCi = cols.findIndex(c => /^application$/i.test(c));
+      if(appCi>=0){
+        const kApp = keys[appCi], isApp = v => /^APP-?\d{3,}$/i.test(String(v==null?"":v).trim()), bi = segIdxOf(appCi);
+        if(clean[kApp]!==null && !isApp(clean[kApp])){
+          for(let ci=segsW[bi][0]; ci<segsW[bi][1]; ci++){
+            const k = keys[ci];
+            if(ci===appCi || clean[k]===null || !isApp(clean[k])) continue;
+            const displaced = clean[kApp]; clean[kApp] = clean[k]; clean[k] = null;
+            const areaCi = cols.findIndex((c,i)=> /^area$/i.test(c) && segIdxOf(i)===bi);
+            if(areaCi>=0 && clean[keys[areaCi]]===null) clean[keys[areaCi]] = displaced; else clean[k] = displaced;
+            appFixed++; break;
+          }
+        }
+      }
       // Safety net: a short plain number (1, 2, 3…) in a UNIQUE ID column is a row counter, not an ID
       cols.forEach((c,ci)=>{ const k = keys[ci]; if(/uniqu/i.test(c) && clean[k]!==null && /^\d{1,3}$/.test(String(clean[k]).trim())){ clean[k] = null; rowNo++; } });
       return { obj, clean, id: idOf(clean), filled: keys.filter(k => clean[k]!==null) };
     });
+    // Follow the previous paste: a continuation image of the SAME block keeps the same columns; values in columns the
+    // previous paste did not extract (e.g. a stray "FTAP") are ignored. Pasting a different block starts fresh.
+    const incSets = () => { const m = {}; cleaned.forEach(c => keys.forEach((k,ci)=>{ if(c.clean[k]!==null){ const si = segIdxOf(ci); (m[si] = m[si] || new Set()).add(k); } })); return m; };
+    const prof = state.lastProfile || {};
+    const inc0 = incSets(); const follow = {}; let profDropped = 0;
+    for(const si of Object.keys(inc0)){
+      const prev = prof[si]; if(!prev || !prev.size) continue;
+      let inter = 0; prev.forEach(k => { if(inc0[si].has(k)) inter++; });
+      if(inter/prev.size >= 0.6) follow[si] = prev; // mostly the same columns = a continuation
+    }
+    if(Object.keys(follow).length){
+      cleaned.forEach(c=>{
+        keys.forEach((k,ci)=>{ const si = segIdxOf(ci); if(follow[si] && c.clean[k]!==null && !follow[si].has(k)){ c.clean[k] = null; profDropped++; } });
+        c.filled = keys.filter(k => c.clean[k]!==null); c.id = idOf(c.clean);
+      });
+    }
+    const inc1 = incSets(); const newProfile = {};
+    for(const si of Object.keys(inc1)) newProfile[si] = follow[si] || inc1[si];
     const hitSegs = new Set(); cleaned.forEach(c => keys.forEach((k,ci)=>{ if(c.clean[k]!==null) hitSegs.add(segIdxOf(ci)); }));
     const blocksList = [...hitSegs].sort((a,b)=>a-b).map(si => segsW[si] ? segsW[si][2] : "?").join(", ") || "none";
-    const blocksNote = (!partMode && hitSegs.size ? ` Blocks detected: ${blocksList}.` : "") + contNote;
+    const profNote = profDropped ? ` Kept the previous paste's columns: ${profDropped} value${profDropped>1?"s":""} in extra columns ignored.` : "";
+    const appNote = appFixed ? ` ${appFixed} application number${appFixed>1?"s were":" was"} moved into the Application column.` : "";
+    const blocksNote = appNote + profNote + (!partMode && hitSegs.size ? ` Blocks detected: ${blocksList}.` : "") + contNote;
+    state.lastProfile = newProfile;
     if(partMode || hitSegs.size) state.lastBlocks = partMode ? [+pv] : [...hitSegs].sort((a,b)=>a-b);
     const idRows = cleaned.filter(c => c.id);
     const allNew = idRows.length>0 && idRows.every(c => !state.rows.some(r => sameSite(r.data, c.clean)));
@@ -633,7 +671,7 @@ ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JS
         .concat(c.filled.map(([l,v])=>`  + ${l}: ${v}`))
         .concat(c.kept.map(([l,o,v])=>`  = ${l}: kept ${o} (ignored ${v})`)).join("\n");
     }).join("\n\n") || "(no values were filled)";
-    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nNew rows: ${added}\nMerged into existing rows: ${merged}\nBlank rows kept as spacing: ${blankRows}\nExisting values kept (not overwritten): ${kept}\nRow numbers ignored in UNIQUE ID columns: ${rowNo}\nSource fields with no matching column (dropped): ${dropped}\nBlocks detected: ${blocksList}${partMode ? " (you chose the part)" : " (auto)"}\nRow alignment: ${alignInfo}\n\nChanges by row (+ filled, = kept existing):\n${lines}`);
+    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nNew rows: ${added}\nMerged into existing rows: ${merged}\nBlank rows kept as spacing: ${blankRows}\nApplication numbers moved into the Application column: ${appFixed}\nValues ignored (columns the previous paste did not use): ${profDropped}\nExisting values kept (not overwritten): ${kept}\nRow numbers ignored in UNIQUE ID columns: ${rowNo}\nSource fields with no matching column (dropped): ${dropped}\nBlocks detected: ${blocksList}${partMode ? " (you chose the part)" : " (auto)"}\nRow alignment: ${alignInfo}\n\nChanges by row (+ filled, = kept existing):\n${lines}`);
     clearStaged();
   } catch(e){
     const code = e && e.code;
@@ -696,7 +734,7 @@ function resetTable(){
   if(!state.rows.length) return;
   if(!confirm(`Delete all ${state.rows.length} row(s) for ${state.schemaKey}? This can't be undone.`)) return;
   pushUndo("table reset", "Restore table data");
-  state.rows = []; state.lastBatch = []; state.lastBlocks = []; saveRows(); renderTable();
+  state.rows = []; state.lastBatch = []; state.lastBlocks = []; state.lastProfile = {}; saveRows(); renderTable();
   setStatus("Table reset.", false, true);
 }
 
