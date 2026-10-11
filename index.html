@@ -294,7 +294,7 @@ function switchSchema(){
 const LS_KEY = k => "caf_rows_" + k;
 function saveRows(){ localStorage.setItem(LS_KEY(state.schemaKey), JSON.stringify(state.rows)); }
 function loadRows(){
-  state.lastBatch = []; state.undoStack = []; updateUndoBtn();
+  state.lastBatch = []; state.lastBlocks = []; state.undoStack = []; updateUndoBtn();
   try{ state.rows = JSON.parse(localStorage.getItem(LS_KEY(state.schemaKey)) || "[]"); }
   catch(e){ state.rows = []; }
   renderTable();
@@ -462,14 +462,17 @@ async function extract(){
     const seg = partMode ? SEGMENTS[state.schemaKey][+pv] : null;
     const [pa, pb] = seg ? [seg[0], seg[1]] : [0, keys.length];
     const pkeys = keys.slice(pa, pb);                 // unique keys for the chosen part
-    const askKeys = partMode ? uniqNames(cols.slice(pa, pb)) : pkeys; // names the model sees (unique within the part)
+    const segList = SEGMENTS[state.schemaKey] || [];
+    // Part mode: names unique within the part. Auto mode: every name carries its block, e.g. "COST [GROUND SPACE]"
+    const askKeys = partMode ? uniqNames(cols.slice(pa, pb))
+      : segList.flatMap(([a,b,l]) => uniqNames(cols.slice(a,b)).map(n => `${n} [${l}]`));
     const rules = RULES + (state.schemaKey==="PTCI_CAF2_Format" ? "\n"+CME_NOTE : "") + `
 9. The image may show only SOME of the columns (a partial screenshot of a wide table). Fill only the columns visible in the image and leave out every other key. Never guess or copy values from other columns.
 11. "PLA ID", "GT Site ID" and "Site ID" are the same field. If the image shows any of them, put the value in whichever of those columns exists in the target list.
 12. A row-number column (headed "NO.", "No", "#" or similar, with values 1, 2, 3…) is only a row counter. NEVER copy it into any column, and in particular NEVER into UNIQUE_ID / UNIQUIE_ID / UNIQUE ID. Fill a unique-ID column only when the image has a column explicitly headed as a unique ID or request reference; otherwise omit it.
 ` + (partMode
   ? `10. This image shows ONE part of the form: the "${seg ? seg[2] : ''}" part (it may have a title such as EPA, GROUND SPACE or POWER). The keys listed above are exactly that group, in left-to-right order. Match each visible header to the key at the same position; do not fill keys that are not visible.`
-  : `10. Some column names repeat in the form; repeats are suffixed " #2", " #3" so every key is unique. They are in left-to-right order — assign each visible value to the correct occurrence by position.`);
+  : `10. Every key ends with its block name in square brackets, e.g. "COST [EPA]" and "COST [GROUND SPACE]" are different columns. In the image each block has a title bar above its column headers (SITE DETAILS, EPA, GROUND SPACE (may appear as GRD), POWER (may appear as PWR), FACILITY UPGRADE, CHANGE REQUEST REMARKS…). Read the title bar and use ONLY the keys of that block for the columns beneath it. An image may show several blocks side by side: fill each block's keys under its own title bar. If no title bar is visible, use the column headers and their left-to-right order to choose the block.`);
     const prompt = `You are extracting structured site data from an uploaded vendor CAF form image.
 
 Target columns, in exact order (use these exact strings as JSON keys):
@@ -477,18 +480,38 @@ ${JSON.stringify(askKeys)}
 
 ${rules}
 
-Reply with ONLY a JSON array of objects, one object for EVERY table row in the image, top to bottom, in order, INCLUDING rows that are completely blank (for a fully blank row write an empty object {}). Never skip, merge, or reorder rows: the array length must equal the number of table rows you can see. Text that wraps onto several lines inside one cell is still ONE cell in ONE row. Each object may use only these keys: ${JSON.stringify(askKeys)}. Include a key ONLY when its cell is visible and has a value; OMIT every blank, unreadable or not-visible key (do not write null). No prose, no markdown fences, just the JSON array.`;
+${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JSON object {"blocks_seen":[...],"rows":[...]} where "blocks_seen" lists the block title bars visible in the image, spelled as written there (use [] if NO block title bar is visible, for example on a continuation page) and "rows" is a JSON array of objects, '}one object for EVERY table row in the image, top to bottom, in order, INCLUDING rows that are completely blank (for a fully blank row write an empty object {}). Never skip, merge, or reorder rows: the array length must equal the number of table rows you can see. Text that wraps onto several lines inside one cell is still ONE cell in ONE row. Each object may use only these keys: ${JSON.stringify(askKeys)}. Include a key ONLY when its cell is visible and has a value; OMIT every blank, unreadable or not-visible key (do not write null). No prose, no markdown fences, just the JSON.`;
 
     const b64 = await imageToBase64(file);
     const bandsP = detectBands(file);
     const t0 = Date.now(); let label = "Reading the image"; setStatus("Reading the image… 0s");
     tick = setInterval(()=> setStatus(`${label}… ${Math.round((Date.now()-t0)/1000)}s`), 1000);
-    let data = await callApi(prompt, b64, true, m => { label = "Reading the image (" + m + ")"; });
+    const raw = await callApi(prompt, b64, true, m => { label = "Reading the image (" + m + ")"; });
+    let data = raw, blocksSeen = null;
+    if(raw && !Array.isArray(raw) && Array.isArray(raw.rows)){ data = raw.rows; blocksSeen = Array.isArray(raw.blocks_seen) ? raw.blocks_seen : []; }
     if(!Array.isArray(data) || !data.length) throw {code:"empty_completion"};
     // Use the table grid to fix the blank-row count (the AI often skips or miscounts blank rows)
     const aiRows = data.length;
     const re = realign(data, await bandsP);
     if(re.used) data = re.data;
+    // No block title bar in the image (e.g. page 2 of a long table): continue the block from the previous paste
+    let contNote = "";
+    if(!partMode && blocksSeen && blocksSeen.length===0){
+      const nameOfKey = k => k.replace(/ \[[^\]]*\]$/, "");
+      const baseName = n => n.replace(/ #\d+$/, "");
+      const nameCount = {};
+      segList.forEach(([a,b])=>{ new Set(cols.slice(a,b)).forEach(n=>{ nameCount[n]=(nameCount[n]||0)+1; }); });
+      const used = new Set(); data.forEach(o => Object.keys(o||{}).forEach(k => used.add(nameOfKey(k))));
+      const ambiguous = [...used].filter(n => (nameCount[baseName(n)]||0) > 1);
+      if(ambiguous.length){
+        const last = state.lastBlocks || [];
+        const tgt = last.length===1 ? segList[last[0]] : null;
+        const tnames = tgt ? uniqNames(cols.slice(tgt[0], tgt[1])) : [];
+        if(!tgt || !ambiguous.every(n => tnames.includes(n))) throw {code:"block_unknown"};
+        data = data.map(o => { if(!o) return o; const out = {}; for(const [k,v] of Object.entries(o)){ const n = nameOfKey(k); out[tnames.includes(n) ? `${n} [${tgt[2]}]` : k] = v; } return out; });
+        contNote = ` No block title bar found, so it continued the previous ${tgt[2]} block.`;
+      }
+    }
     const fixNote = re.used && aiRows!==data.length ? ` — row count corrected from ${aiRows} to ${data.length} using the table grid` : "";
     const alignInfo = re.used ? `table grid detected (${re.bands} bands, ${re.headers} header row${re.headers===1?"":"s"}); AI returned ${aiRows} rows, using ${data.length}` : `table grid not detected, using the AI's ${aiRows} rows as returned`;
 
@@ -509,6 +532,13 @@ Reply with ONLY a JSON array of objects, one object for EVERY table row in the i
     const startRow = lastFilled + 1;
     let blankRows = 0;
     const base = Date.now();
+    const segsW = SEGMENTS[state.schemaKey] || [];
+    const segIdxOf = ci => { const x = segsW.findIndex(sg => ci>=sg[0] && ci<sg[1]); return x<0 ? 0 : x; };
+    // Auto mode: each block has its own start row (the row after the last row that already has values in THAT block)
+    const startBySeg = {};
+    segsW.forEach((sg,si)=>{ let lf=-1; state.rows.forEach((r,p)=>{ for(let ci=sg[0]; ci<sg[1]; ci++){ if(!isEmpty(r.data[keys[ci]])){ lf=p; break; } } }); startBySeg[si]=lf+1; });
+    const blankRow = id => ({ id, data: Object.fromEntries(keys.map(k=>[k,null])), addedAt: base });
+    const changeMap = new Map();
     let added=0, merged=0, dropped=0, kept=0, rowNo=0; const touched=[]; const changes=[];
     const segsAll = SEGMENTS[state.schemaKey] || [];
     const lab = ci => { const sg = segsAll.find(x=>ci>=x[0] && ci<x[1]); return cols[ci] + (sg ? ` [${sg[2]}]` : ""); };
@@ -522,6 +552,10 @@ Reply with ONLY a JSON array of objects, one object for EVERY table row in the i
       cols.forEach((c,ci)=>{ const k = keys[ci]; if(/uniqu/i.test(c) && clean[k]!==null && /^\d{1,3}$/.test(String(clean[k]).trim())){ clean[k] = null; rowNo++; } });
       return { obj, clean, id: idOf(clean), filled: keys.filter(k => clean[k]!==null) };
     });
+    const hitSegs = new Set(); cleaned.forEach(c => keys.forEach((k,ci)=>{ if(c.clean[k]!==null) hitSegs.add(segIdxOf(ci)); }));
+    const blocksList = [...hitSegs].sort((a,b)=>a-b).map(si => segsW[si] ? segsW[si][2] : "?").join(", ") || "none";
+    const blocksNote = (!partMode && hitSegs.size ? ` Blocks detected: ${blocksList}.` : "") + contNote;
+    if(partMode || hitSegs.size) state.lastBlocks = partMode ? [+pv] : [...hitSegs].sort((a,b)=>a-b);
     const idRows = cleaned.filter(c => c.id);
     const allNew = idRows.length>0 && idRows.every(c => !state.rows.some(r => sameSite(r.data, c.clean)));
     let lastReal = -1; cleaned.forEach((c,i)=>{ if(c.filled.length) lastReal = i; });
@@ -536,6 +570,29 @@ Reply with ONLY a JSON array of objects, one object for EVERY table row in the i
           state.rows.push({ id: base+"-b"+i, data: Object.fromEntries(keys.map(k=>[k,null])), addedAt: base+i });
           changes.push({pos: state.rows.length-1, blank:true});
         } else if(!id){ changes.push({pos, blank:true}); }
+        return;
+      }
+      if(!partMode && !id){
+        // Auto mode, no site ID: each block's cells go to the table row lined up for THAT block (never overwrite)
+        const bySeg = {};
+        keys.forEach((k,ci)=>{ if(clean[k]!==null){ const si = segIdxOf(ci); (bySeg[si] = bySeg[si] || []).push([k,ci]); } });
+        let existed = false; const hit = new Set();
+        for(const si of Object.keys(bySeg)){
+          const p = (startBySeg[si] || 0) + i;
+          while(state.rows.length < p && state.rows.length < 500){ state.rows.push(blankRow(base+"-pad"+state.rows.length)); }
+          let t = state.rows[p], isNew = false;
+          if(t){ existed = true; } else { t = blankRow(base+"-"+i+"-"+si); state.rows.push(t); isNew = true; }
+          let ch = changeMap.get(t.id);
+          if(!ch){ ch = {id:t.id, isNew, filled:[], kept:[]}; changeMap.set(t.id, ch); changes.push(ch); }
+          for(const [k,ci] of bySeg[si]){
+            if(isEmpty(t.data[k])){ t.data[k] = clean[k]; ch.filled.push([lab(ci), clean[k]]); }
+            else if(String(t.data[k])!==String(clean[k])){ kept++; ch.kept.push([lab(ci), t.data[k], clean[k]]); }
+          }
+          hit.add(t.id);
+        }
+        if(existed) merged++; else added++;
+        hit.forEach(h => touched.push(h));
+        for(const k of Object.keys(obj||{})){ if(!askKeys.includes(k)) dropped++; }
         return;
       }
       let target = null;
@@ -568,7 +625,7 @@ Reply with ONLY a JSON array of objects, one object for EVERY table row in the i
     state.lastBatch = touched;
     saveRows(); renderTable();
 
-    setStatus(`Read ${data.length} row${data.length>1?"s":""} from the image${blankRows ? ` (${blankRows} blank)` : ""}${fixNote}: ${added} new, ${merged} merged into existing row${merged===1?"":"s"}.` + (kept ? ` ${kept} cell${kept>1?"s":""} already had a different value and ${kept>1?"were":"was"} kept (not overwritten).` : ""), false, true);
+    setStatus(`Read ${data.length} row${data.length>1?"s":""} from the image${blankRows ? ` (${blankRows} blank)` : ""}${fixNote}: ${added} new, ${merged} merged into existing row${merged===1?"":"s"}.` + (kept ? ` ${kept} cell${kept>1?"s":""} already had a different value and ${kept>1?"were":"was"} kept (not overwritten).` : "") + blocksNote, false, true);
     const lines = changes.map(c=>{
       if(c.blank) return `Row ${c.pos+1} — blank row in the image (left empty)`;
       const n = state.rows.findIndex(r=>r.id===c.id)+1;
@@ -576,7 +633,7 @@ Reply with ONLY a JSON array of objects, one object for EVERY table row in the i
         .concat(c.filled.map(([l,v])=>`  + ${l}: ${v}`))
         .concat(c.kept.map(([l,o,v])=>`  = ${l}: kept ${o} (ignored ${v})`)).join("\n");
     }).join("\n\n") || "(no values were filled)";
-    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nNew rows: ${added}\nMerged into existing rows: ${merged}\nBlank rows kept as spacing: ${blankRows}\nExisting values kept (not overwritten): ${kept}\nRow numbers ignored in UNIQUE ID columns: ${rowNo}\nSource fields with no matching column (dropped): ${dropped}\nRow alignment: ${alignInfo}\n\nChanges by row (+ filled, = kept existing):\n${lines}`);
+    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nNew rows: ${added}\nMerged into existing rows: ${merged}\nBlank rows kept as spacing: ${blankRows}\nExisting values kept (not overwritten): ${kept}\nRow numbers ignored in UNIQUE ID columns: ${rowNo}\nSource fields with no matching column (dropped): ${dropped}\nBlocks detected: ${blocksList}${partMode ? " (you chose the part)" : " (auto)"}\nRow alignment: ${alignInfo}\n\nChanges by row (+ filled, = kept existing):\n${lines}`);
     clearStaged();
   } catch(e){
     const code = e && e.code;
@@ -587,6 +644,7 @@ Reply with ONLY a JSON array of objects, one object for EVERY table row in the i
       invalid_json: "The reply wasn't valid data — try again, or a clearer image.",
       empty_completion: "Nothing was extracted — try a clearer image.",
       server_not_configured: "Server is missing GEMINI_API_KEY (set it in Vercel settings).",
+      block_unknown: "This image has no block title bar and I can't tell which block it continues (the last paste had several blocks, or none). Pick the block in the dropdown and extract again.",
       network: "Couldn't reach the server — check your connection and try again.",
     }[code] || ("Extraction failed" + (code?` (${code})`:"") + (e && e.attempts>1 ? ` after ${e.attempts} attempts` : "") + ".");
     setStatus(msg, true);
@@ -638,7 +696,7 @@ function resetTable(){
   if(!state.rows.length) return;
   if(!confirm(`Delete all ${state.rows.length} row(s) for ${state.schemaKey}? This can't be undone.`)) return;
   pushUndo("table reset", "Restore table data");
-  state.rows = []; state.lastBatch = []; saveRows(); renderTable();
+  state.rows = []; state.lastBatch = []; state.lastBlocks = []; saveRows(); renderTable();
   setStatus("Table reset.", false, true);
 }
 
