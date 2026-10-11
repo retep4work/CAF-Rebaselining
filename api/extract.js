@@ -49,13 +49,16 @@ export default async function handler(req, res) {
   for (const model of models) {
     let v = goodVariant[model] ?? 0;
     for (let attempt = 1; attempt <= 2; attempt++) {
-      if (Date.now() - started > 45000) break; // stay under the 60s function limit
+      if (Date.now() - started > 32000) break; // leave room to answer before the function limit
+      // Give up on one slow Gemini request after 22s so we can answer cleanly (and the page can retry) instead of a 504
+      const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 22000);
       try {
         const r = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-          { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": key }, body: makeBody(v) }
+          { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": key }, body: makeBody(v), signal: ctl.signal }
         );
         const out = await r.json().catch(() => ({}));
+        clearTimeout(timer);
 
         if (r.ok) {
           goodVariant[model] = v;
@@ -86,6 +89,7 @@ export default async function handler(req, res) {
         // Real errors (bad request, bad key) won't be fixed by another model
         return res.status(502).json({ error: "upstream_error", detail: `[model: ${model}] (HTTP ${r.status}) ${msg}` });
       } catch (e) {
+        clearTimeout(timer);
         tried.push(`${model}: ${String(e).slice(0, 100)}`);
         break;
       }
