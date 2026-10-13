@@ -166,7 +166,7 @@ header{position:relative;}
     <div class="paste-zone" id="pasteZone" tabindex="0">
       Click here, then <strong>Ctrl+V</strong> (or <strong>Cmd+V</strong>) to paste a copied image — or use the file picker above.
     </div>
-    <div class="status" id="status"></div>
+        <div class="status" id="status"></div>
     <details class="log" id="logBox" hidden>
       <summary>Extraction details</summary>
       <pre id="logText"></pre>
@@ -347,6 +347,56 @@ function setLog(text){
 }
 
 // Shrink the image so the upload stays well under Vercel's 4.5 MB request limit
+// ---------- Erase struck-out text before the AI reads the image ----------
+// Finds thin horizontal lines drawn THROUGH text (strikethrough) and paints the struck text white.
+// Works on light-background screenshots only; returns how many struck-out values were erased.
+function strikeCore(d, w, h){
+  const n = w*h, lum = new Float32Array(n);
+  for(let i=0;i<n;i++){ lum[i] = 0.299*d[i*4] + 0.587*d[i*4+1] + 0.114*d[i*4+2]; }
+  const samp = []; for(let i=0;i<n;i+=7) samp.push(lum[i]); samp.sort((a,b)=>a-b);
+  if(samp[samp.length>>1] < 170) return 0; // dark-background screenshot: leave it alone
+  const dk = (x,y) => lum[y*w+x] < 85;
+  const fr = (y,x0,x1) => { let k=0; for(let x=x0;x<x1;x++){ if(dk(x,y)) k++; } return k/(x1-x0); };
+  const MINR = 14, MAXR = Math.min(260, Math.round(w*0.6)), boxes = [];
+  for(let y=6; y<h-6; y++){
+    let x = 0;
+    while(x<w){
+      if(!dk(x,y)){ x++; continue; }
+      let x1 = x; while(x1<w && dk(x1,y)) x1++;
+      const L = x1-x;
+      if(L>=MINR && L<=MAXR && fr(y-1,x,x1)<0.5){
+        let t = 1; while(y+t<h && t<8 && fr(y+t,x,x1)>0.9) t++;
+        if(t<=3){
+          const yb = y+t-1; let both = 0, gap = 0;
+          for(let xx=x; xx<x1; xx++){
+            let up=false, dn=false;
+            for(let k=2;k<=5;k++){ if(y-k>=0 && dk(xx,y-k)) up=true; if(yb+k<h && dk(xx,yb+k)) dn=true; }
+            if(up && dn) both++; if(!up && !dn) gap++;
+          }
+          const bf = both/L;
+          if(bf>=0.25 && bf<=0.85 && gap>=2) boxes.push([x,y,x1,yb]);
+        }
+      }
+      x = x1;
+    }
+  }
+  const ink = (x,y) => lum[y*w+x] < 170;
+  const rowInk = (yy,x0,x1) => { for(let x=x0;x<x1;x++){ if(ink(x,yy)) return true; } return false; };
+  for(const [x0,y,x1,yb] of boxes){
+    let top = y;  while(top>0   && y-top<14  && rowInk(top-1,x0,x1) && fr(top-1,x0,x1)<=0.9) top--;
+    let bot = yb; while(bot<h-1 && bot-yb<14 && rowInk(bot+1,x0,x1) && fr(bot+1,x0,x1)<=0.9) bot++;
+    for(let yy=top; yy<=bot; yy++){ for(let xx=Math.max(0,x0-2); xx<Math.min(w,x1+2); xx++){ const i=(yy*w+xx)*4; d[i]=255; d[i+1]=255; d[i+2]=255; } }
+  }
+  return boxes.length;
+}
+function eraseStrikeouts(c){
+  const g = c.getContext("2d", {willReadFrequently:true});
+  const id = g.getImageData(0,0,c.width,c.height);
+  const k = strikeCore(id.data, c.width, c.height);
+  if(k) g.putImageData(id,0,0);
+  return k;
+}
+
 function imageToBase64(file, maxDim=2000){
   return new Promise((resolve, reject)=>{
     const img = new Image();
@@ -355,6 +405,9 @@ function imageToBase64(file, maxDim=2000){
       const c = document.createElement("canvas");
       c.width = Math.round(img.width*scale); c.height = Math.round(img.height*scale);
       c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      state.strikeErased = 0;
+      try{ state.strikeErased = eraseStrikeouts(c); }catch(e){} // struck-out text always counts as blank
+      state.procCanvas = c; // the (cleaned) image the AI sees; the row grid is measured on this same picture
       resolve(c.toDataURL("image/jpeg", 0.9).split(",")[1]);
     };
     img.onerror = ()=> reject({code:"image_rejected"});
@@ -403,7 +456,7 @@ async function callApi(prompt, imageB64, retry=true, note){
 // Returns an array (top→bottom) of true = row has text, false = blank row; or null if no clear grid was found.
 async function detectBands(file){
   try{
-    const img = await new Promise((res,rej)=>{ const im = new Image(); im.onload = ()=>res(im); im.onerror = rej; im.src = URL.createObjectURL(file); });
+    const img = (typeof HTMLCanvasElement!=="undefined" && file instanceof HTMLCanvasElement) ? file : await new Promise((res,rej)=>{ const im = new Image(); im.onload = ()=>res(im); im.onerror = rej; im.src = URL.createObjectURL(file); });
     const sc = Math.min(1, 1400/Math.max(img.width, img.height));
     const w = Math.round(img.width*sc), h = Math.round(img.height*sc);
     const c = document.createElement("canvas"); c.width = w; c.height = h;
@@ -486,7 +539,7 @@ ${rules}
 ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JSON object {"blocks_seen":[...],"rows":[...]} where "blocks_seen" lists the block title bars visible in the image, spelled as written there (use [] if NO block title bar is visible, for example on a continuation page) and "rows" is a JSON array of objects, '}one object for EVERY table row in the image, top to bottom, in order, INCLUDING rows that are completely blank (for a fully blank row write an empty object {}). Never skip, merge, or reorder rows: the array length must equal the number of table rows you can see. Text that wraps onto several lines inside one cell is still ONE cell in ONE row. Each object may use only these keys: ${JSON.stringify(askKeys)}. Include a key ONLY when its cell is visible and has a value; OMIT every blank, unreadable or not-visible key (do not write null). No prose, no markdown fences, just the JSON.`;
 
     const b64 = await imageToBase64(file);
-    const bandsP = detectBands(file);
+    const bandsP = detectBands(state.procCanvas || file);
     const t0 = Date.now(); let label = "Reading the image"; setStatus("Reading the image… 0s");
     tick = setInterval(()=> setStatus(`${label}… ${Math.round((Date.now()-t0)/1000)}s`), 1000);
     const raw = await callApi(prompt, b64, true, m => { label = "Reading the image (" + m + ")"; });
@@ -597,7 +650,8 @@ ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JS
     const blocksList = [...hitSegs].sort((a,b)=>a-b).map(si => segsW[si] ? segsW[si][2] : "?").join(", ") || "none";
     const profNote = profDropped ? ` Kept the previous paste's columns: ${profDropped} value${profDropped>1?"s":""} in extra columns ignored.` : "";
     const appNote = appFixed ? ` ${appFixed} application number${appFixed>1?"s were":" was"} moved into the Application column.` : "";
-    const blocksNote = appNote + profNote + (!partMode && hitSegs.size ? ` Blocks detected: ${blocksList}.` : "") + contNote + multiNote;
+    const strikeNote = state.strikeErased ? ` Ignored ${state.strikeErased} struck-out value${state.strikeErased>1?"s":""} (erased from the image before reading).` : "";
+    const blocksNote = strikeNote + appNote + profNote + (!partMode && hitSegs.size ? ` Blocks detected: ${blocksList}.` : "") + contNote + multiNote;
     state.lastProfile = newProfile;
     if(partMode || hitSegs.size) state.lastBlocks = partMode ? [+pv] : [...hitSegs].sort((a,b)=>a-b);
     const idRows = cleaned.filter(c => c.id);
@@ -677,7 +731,7 @@ ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JS
         .concat(c.filled.map(([l,v])=>`  + ${l}: ${v}`))
         .concat(c.kept.map(([l,o,v])=>`  = ${l}: kept ${o} (ignored ${v})`)).join("\n");
     }).join("\n\n") || "(no values were filled)";
-    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nNew rows: ${added}\nMerged into existing rows: ${merged}\nBlank rows kept as spacing: ${blankRows}\nApplication numbers moved into the Application column: ${appFixed}\nValues ignored (columns the previous paste did not use): ${profDropped}\nExisting values kept (not overwritten): ${kept}\nRow numbers ignored in UNIQUE ID columns: ${rowNo}\nSource fields with no matching column (dropped): ${dropped}\n${multi.length ? "Possible struck-out text (two values in one cell):\n  " + multi.join("\n  ") + "\n\n" : ""}Blocks detected: ${blocksList}${partMode ? " (you chose the part)" : " (auto)"}\nRow alignment: ${alignInfo}\n\nChanges by row (+ filled, = kept existing):\n${lines}`);
+    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nNew rows: ${added}\nMerged into existing rows: ${merged}\nBlank rows kept as spacing: ${blankRows}\nApplication numbers moved into the Application column: ${appFixed}\nValues ignored (columns the previous paste did not use): ${profDropped}\nStruck-out values erased from the image: ${state.strikeErased||0}\nExisting values kept (not overwritten): ${kept}\nRow numbers ignored in UNIQUE ID columns: ${rowNo}\nSource fields with no matching column (dropped): ${dropped}\n${multi.length ? "Possible struck-out text (two values in one cell):\n  " + multi.join("\n  ") + "\n\n" : ""}Blocks detected: ${blocksList}${partMode ? " (you chose the part)" : " (auto)"}\nRow alignment: ${alignInfo}\n\nChanges by row (+ filled, = kept existing):\n${lines}`);
     clearStaged();
   } catch(e){
     const code = e && e.code;
