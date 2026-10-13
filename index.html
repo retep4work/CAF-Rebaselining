@@ -529,12 +529,30 @@ async function extract(){
 ` + (partMode
   ? `10. This image shows ONE part of the form: the "${seg ? seg[2] : ''}" part (it may have a title such as EPA, GROUND SPACE or POWER). The keys listed above are exactly that group, in left-to-right order. Match each visible header to the key at the same position; do not fill keys that are not visible.`
   : `10. Every key ends with its block name in square brackets, e.g. "COST [EPA]" and "COST [GROUND SPACE]" are different columns. In the image each block has a title bar above its column headers (SITE DETAILS, EPA, GROUND SPACE (may appear as GRD), POWER (may appear as PWR), FACILITY UPGRADE, CHANGE REQUEST REMARKS…). Read the title bar and use ONLY the keys of that block for the columns beneath it. An image may show several blocks side by side: fill each block's keys under its own title bar. If no title bar is visible, use the column headers and their left-to-right order to choose the block.`);
+    // FACILITY UPGRADE: a "CME" source column feeds GROUND SPACE and a "VERTICAL SPACE" source column feeds REMARKS
+    // (only when the block has no CME / VERTICAL SPACE column of its own)
+    const aliasMap = {}, aliasLines = [];
+    segList.forEach(([a,b,l])=>{
+      if(!/facility upgrade/i.test(l)) return;
+      const nm = cols.slice(a,b).map(x => x.toUpperCase().trim());
+      const keyAt = ci => partMode ? ((ci>=pa && ci<pb) ? askKeys[ci-pa] : null) : askKeys[ci];
+      const add = (own, srcNorms, targetUpper, text) => {
+        if(nm.includes(own)) return;
+        const ti = nm.indexOf(targetUpper); if(ti<0) return;
+        const tk = keyAt(a+ti); if(!tk) return;
+        srcNorms.forEach(sn => { aliasMap[sn] = tk; });
+        aliasLines.push(text.replace("{KEY}", tk));
+      };
+      add("CME", ["CME"], "GROUND SPACE", `A source column headed "CME" (it may wrap as "CM E") is NOT a key: put its values in the key "{KEY}".`);
+      add("VERTICAL SPACE", ["VERTICALSPACE"], "REMARKS", `A source column headed "VERTICAL SPACE" is NOT a key: put its values in the key "{KEY}".`);
+    });
+    const aliasText = aliasLines.length ? "\n16. In the FACILITY UPGRADE block: " + aliasLines.join(" ") : "";
     const prompt = `You are extracting structured site data from an uploaded vendor CAF form image.
 
 Target columns, in exact order (use these exact strings as JSON keys):
 ${JSON.stringify(askKeys)}
 
-${rules}
+${rules}${aliasText}
 
 ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JSON object {"blocks_seen":[...],"rows":[...]} where "blocks_seen" lists the block title bars visible in the image, spelled as written there (use [] if NO block title bar is visible, for example on a continuation page) and "rows" is a JSON array of objects, '}one object for EVERY table row in the image, top to bottom, in order, INCLUDING rows that are completely blank (for a fully blank row write an empty object {}). Never skip, merge, or reorder rows: the array length must equal the number of table rows you can see. Text that wraps onto several lines inside one cell is still ONE cell in ONE row. Each object may use only these keys: ${JSON.stringify(askKeys)}. Include a key ONLY when its cell is visible and has a value; OMIT every blank, unreadable or not-visible key (do not write null). No prose, no markdown fences, just the JSON.`;
 
@@ -567,6 +585,16 @@ ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JS
         data = data.map(o => { if(!o) return o; const out = {}; for(const [k,v] of Object.entries(o)){ const n = nameOfKey(k); out[tnames.includes(n) ? `${n} [${tgt[2]}]` : k] = v; } return out; });
         contNote = ` No block title bar found, so it continued the previous ${tgt[2]} block.`;
       }
+    }
+    if(Object.keys(aliasMap).length){
+      data = data.map(o => {
+        if(!o) return o; const out = Object.assign({}, o);
+        for(const [k,v] of Object.entries(o)){
+          const tk = aliasMap[k.replace(/ \[[^\]]*\]$/, "").replace(/\s+/g, "").toUpperCase()];
+          if(tk && !askKeys.includes(k)){ if(out[tk]===undefined || out[tk]===null || out[tk]==="") out[tk] = v; delete out[k]; }
+        }
+        return out;
+      });
     }
     const fixNote = re.used && aiRows!==data.length ? ` — row count corrected from ${aiRows} to ${data.length} using the table grid` : "";
     const alignInfo = re.used ? `table grid detected (${re.bands} bands, ${re.headers} header row${re.headers===1?"":"s"}); AI returned ${aiRows} rows, using ${data.length}` : `table grid not detected, using the AI's ${aiRows} rows as returned`;
@@ -655,7 +683,7 @@ ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JS
     state.lastProfile = newProfile;
     if(partMode || hitSegs.size) state.lastBlocks = partMode ? [+pv] : [...hitSegs].sort((a,b)=>a-b);
     const idRows = cleaned.filter(c => c.id);
-    const allNew = idRows.length>0 && idRows.every(c => !state.rows.some(r => sameSite(r.data, c.clean)));
+    const allNew = idRows.length>0; // rows with site details are always their own rows (see below)
     let lastReal = -1; cleaned.forEach((c,i)=>{ if(c.filled.length) lastReal = i; });
 
     cleaned.forEach(({obj, clean, id, filled}, i)=>{
@@ -695,7 +723,9 @@ ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JS
       }
       let target = null;
       if(id){
-        target = state.rows.find(r => sameSite(r.data, clean));
+        // Never merge by site details: one CAF can list the same site twice with different excess values,
+        // so every row that carries site details becomes its own new row.
+        target = null;
       } else {
         // No site ID: line up by position (never overwrite; only empty cells get filled)
         while(state.rows.length < pos && state.rows.length < 500){
