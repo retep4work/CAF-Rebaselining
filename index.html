@@ -471,6 +471,8 @@ async function extract(){
 11. "PLA ID", "GT Site ID" and "Site ID" are the same field. If the image shows any of them, put the value in whichever of those columns exists in the target list.
 12. A row-number column (headed "NO.", "No", "#" or similar, with values 1, 2, 3…) is only a row counter. NEVER copy it into any column, and in particular NEVER into UNIQUE_ID / UNIQUIE_ID / UNIQUE ID. Fill a unique-ID column only when the image has a column explicitly headed as a unique ID or request reference; otherwise omit it.
 13. Application numbers shaped like "APP-020430" belong in the "Application" column. Use "CAF Refence" ONLY when the image has a column explicitly headed CAF Reference. If the image has no header row, assign columns left to right but check each value's shape (for example PH090169-style codes are tower site IDs and MIN552-style codes are GT site IDs, when those columns exist) so no value ends up one column off.
+14. STRIKETHROUGH: text with a line drawn through it is cancelled and must NEVER be included. If a cell contains a struck-out value together with a corrected value, output ONLY the corrected (not struck-out) value, for example a cell showing a normal "0.00" next to a struck-out "-0.20" is just 0.00. If everything in a cell is struck out, leave that cell empty (omit the key). Look carefully at thin lines through numbers before reading them.
+15. Each cell's value comes ONLY from that cell. Never copy or borrow text from a neighbouring cell or another column, and never join two cells into one value.
 ` + (partMode
   ? `10. This image shows ONE part of the form: the "${seg ? seg[2] : ''}" part (it may have a title such as EPA, GROUND SPACE or POWER). The keys listed above are exactly that group, in left-to-right order. Match each visible header to the key at the same position; do not fill keys that are not visible.`
   : `10. Every key ends with its block name in square brackets, e.g. "COST [EPA]" and "COST [GROUND SPACE]" are different columns. In the image each block has a title bar above its column headers (SITE DETAILS, EPA, GROUND SPACE (may appear as GRD), POWER (may appear as PWR), FACILITY UPGRADE, CHANGE REQUEST REMARKS…). Read the title bar and use ONLY the keys of that block for the columns beneath it. An image may show several blocks side by side: fill each block's keys under its own title bar. If no title bar is visible, use the column headers and their left-to-right order to choose the block.`);
@@ -587,11 +589,15 @@ ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JS
     }
     const inc1 = incSets(); const newProfile = {};
     for(const si of Object.keys(inc1)) newProfile[si] = follow[si] || inc1[si];
+    // Warning: a numeric cell holding two numbers (e.g. "0.00 -0.20") usually means struck-out text was read as well
+    const twoNum = /^-?\d+(?:[.,]\d+)?\s+-?\d+(?:[.,]\d+)?$/; const multi = [];
+    cleaned.forEach((c,i)=> keys.forEach((k,ci)=>{ const v = c.clean[k]; if(v!==null && twoNum.test(String(v).trim())) multi.push(`image row ${i+1} · ${lab(ci)}: "${v}"`); }));
+    const multiNote = multi.length ? ` ⚠ ${multi.length} cell${multi.length>1?"s":""} hold${multi.length>1?"":"s"} two values (possible struck-out text) — see the extraction details.` : "";
     const hitSegs = new Set(); cleaned.forEach(c => keys.forEach((k,ci)=>{ if(c.clean[k]!==null) hitSegs.add(segIdxOf(ci)); }));
     const blocksList = [...hitSegs].sort((a,b)=>a-b).map(si => segsW[si] ? segsW[si][2] : "?").join(", ") || "none";
     const profNote = profDropped ? ` Kept the previous paste's columns: ${profDropped} value${profDropped>1?"s":""} in extra columns ignored.` : "";
     const appNote = appFixed ? ` ${appFixed} application number${appFixed>1?"s were":" was"} moved into the Application column.` : "";
-    const blocksNote = appNote + profNote + (!partMode && hitSegs.size ? ` Blocks detected: ${blocksList}.` : "") + contNote;
+    const blocksNote = appNote + profNote + (!partMode && hitSegs.size ? ` Blocks detected: ${blocksList}.` : "") + contNote + multiNote;
     state.lastProfile = newProfile;
     if(partMode || hitSegs.size) state.lastBlocks = partMode ? [+pv] : [...hitSegs].sort((a,b)=>a-b);
     const idRows = cleaned.filter(c => c.id);
@@ -671,7 +677,7 @@ ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JS
         .concat(c.filled.map(([l,v])=>`  + ${l}: ${v}`))
         .concat(c.kept.map(([l,o,v])=>`  = ${l}: kept ${o} (ignored ${v})`)).join("\n");
     }).join("\n\n") || "(no values were filled)";
-    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nNew rows: ${added}\nMerged into existing rows: ${merged}\nBlank rows kept as spacing: ${blankRows}\nApplication numbers moved into the Application column: ${appFixed}\nValues ignored (columns the previous paste did not use): ${profDropped}\nExisting values kept (not overwritten): ${kept}\nRow numbers ignored in UNIQUE ID columns: ${rowNo}\nSource fields with no matching column (dropped): ${dropped}\nBlocks detected: ${blocksList}${partMode ? " (you chose the part)" : " (auto)"}\nRow alignment: ${alignInfo}\n\nChanges by row (+ filled, = kept existing):\n${lines}`);
+    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nNew rows: ${added}\nMerged into existing rows: ${merged}\nBlank rows kept as spacing: ${blankRows}\nApplication numbers moved into the Application column: ${appFixed}\nValues ignored (columns the previous paste did not use): ${profDropped}\nExisting values kept (not overwritten): ${kept}\nRow numbers ignored in UNIQUE ID columns: ${rowNo}\nSource fields with no matching column (dropped): ${dropped}\n${multi.length ? "Possible struck-out text (two values in one cell):\n  " + multi.join("\n  ") + "\n\n" : ""}Blocks detected: ${blocksList}${partMode ? " (you chose the part)" : " (auto)"}\nRow alignment: ${alignInfo}\n\nChanges by row (+ filled, = kept existing):\n${lines}`);
     clearStaged();
   } catch(e){
     const code = e && e.code;
