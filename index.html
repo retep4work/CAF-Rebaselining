@@ -589,10 +589,24 @@ ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JS
     const bandsP = detectBands(state.procCanvas || file);
     const t0 = Date.now(); let label = "Reading the image"; setStatus("Reading the image… 0s");
     tick = setInterval(()=> setStatus(`${label}… ${Math.round((Date.now()-t0)/1000)}s`), 1000);
-    const raw = await callApi(prompt, b64, true, m => { label = "Reading the image (" + m + ")"; });
+    // Tell the AI how many rows the grid shows, so it does not stop early on long tables
+    const flags0 = await bandsP;
+    const bandsTotal = flags0 ? flags0.length : 0;
+    const countHint = bandsTotal ? `\n\nNOTE: the table grid in this image has about ${bandsTotal} horizontal rows including the header row(s). Return one object for every data row, from the first to the very last, and do not stop early.` : "";
+    const raw = await callApi(prompt + countHint, b64, true, m => { label = "Reading the image (" + m + ")"; });
     let data = raw, blocksSeen = null;
     if(raw && !Array.isArray(raw) && Array.isArray(raw.rows)){ data = raw.rows; blocksSeen = Array.isArray(raw.blocks_seen) ? raw.blocks_seen : []; }
     if(!Array.isArray(data) || !data.length) throw {code:"empty_completion"};
+    // Far fewer rows than the grid shows: the AI skipped some. Ask once more, and keep whichever answer has more rows.
+    if(bandsTotal && data.length < bandsTotal - 4){
+      label = "Some rows were missed, reading again";
+      try{
+        const raw2 = await callApi(prompt + countHint + `\nIMPORTANT: your previous answer had only ${data.length} rows but the grid shows about ${bandsTotal}. Read the table again from the very first row to the very last and return EVERY row.`, b64, true, m => { label = "Some rows were missed, reading again (" + m + ")"; });
+        let d2 = raw2, bs2 = null;
+        if(raw2 && !Array.isArray(raw2) && Array.isArray(raw2.rows)){ d2 = raw2.rows; bs2 = Array.isArray(raw2.blocks_seen) ? raw2.blocks_seen : []; }
+        if(Array.isArray(d2) && d2.length > data.length){ data = d2; if(bs2) blocksSeen = bs2; }
+      }catch(e){ /* keep the first answer */ }
+    }
     // Use the table grid to fix the blank-row count (the AI often skips or miscounts blank rows)
     const aiRows = data.length;
     const re = realign(data, await bandsP);
