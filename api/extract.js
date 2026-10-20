@@ -115,14 +115,22 @@ async function handleGroq(res, { prompt, image, mediaType }) {
   if (!key) return res.status(500).json({ error: "server_not_configured" });
 
   const models = [...new Set([
-    process.env.GROQ_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct",
-    "meta-llama/llama-4-maverick-17b-128e-instruct",
+    process.env.GROQ_MODEL || "qwen/qwen3.8-27b",
+    "qwen/qwen3.6-27b",
   ])];
 
-  const makeBody = model => JSON.stringify({
+  // Qwen models "think" first, which is slow. Try with thinking off + JSON mode, then loosen if the model rejects a setting.
+  const VARIANTS = [
+    { reasoning_effort: "none", response_format: { type: "json_object" } },
+    { response_format: { type: "json_object" } },
+    {},
+  ];
+  const goodV = {};
+
+  const makeBody = (model, v) => JSON.stringify({
     model,
     temperature: 0,
-    response_format: { type: "json_object" },
+    ...VARIANTS[v],
     messages: [{ role: "user", content: [
       { type: "text", text: prompt },
       ...(image ? [{ type: "image_url", image_url: { url: `data:${mediaType || "image/jpeg"};base64,${image}` } }] : []),
@@ -134,6 +142,7 @@ async function handleGroq(res, { prompt, image, mediaType }) {
   let lastStatus = 502;
 
   for (const model of models) {
+    let v = goodV[model] ?? 0;
     for (let attempt = 1; attempt <= 2; attempt++) {
       if (Date.now() - started > 32000) break;
       const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 22000);
@@ -141,14 +150,16 @@ async function handleGroq(res, { prompt, image, mediaType }) {
         const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-          body: makeBody(model),
+          body: makeBody(model, v),
           signal: ctl.signal,
         });
         const out = await r.json().catch(() => ({}));
         clearTimeout(timer);
 
         if (r.ok) {
-          const text = out.choices?.[0]?.message?.content || "";
+          goodV[model] = v;
+          // Drop any <think>…</think> reasoning the model may have included before the JSON
+          const text = (out.choices?.[0]?.message?.content || "").replace(/<think>[\s\S]*?<\/think>/g, "");
           try {
             const data = JSON.parse(text.replace(/```json|```/g, "").trim());
             return res.status(200).json({ data, model: `groq:${model}` });
@@ -160,6 +171,8 @@ async function handleGroq(res, { prompt, image, mediaType }) {
 
         lastStatus = r.status;
         const msg = out?.error?.message || "";
+        // The model doesn't accept one of the optional settings: loosen them and retry
+        if (r.status === 400 && /reasoning|response_format|json/i.test(msg) && v < VARIANTS.length - 1) { v++; attempt--; continue; }
         tried.push(`${model}: HTTP ${r.status} ${msg.slice(0, 120)}`);
 
         const retryable =
