@@ -130,6 +130,7 @@ async function handleGroq(res, { prompt, image, mediaType }) {
   const makeBody = (model, v) => JSON.stringify({
     model,
     temperature: 0,
+    max_completion_tokens: 8192, // long tables need room; the default can cut the answer short
     ...VARIANTS[v],
     messages: [{ role: "user", content: [
       { type: "text", text: prompt },
