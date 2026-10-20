@@ -29,6 +29,8 @@ export default async function handler(req, res) {
     "gemini-3.1-flash-lite",
     "gemini-2.5-flash-lite",
   ])];
+  // STRICT_MODEL=1 (Vercel setting): use only the preferred model, never silently fall back to a different one
+  if (process.env.STRICT_MODEL === "1") models.splice(1);
 
   // Speed: turn model "thinking" down/off. Different Gemini generations name this differently,
   // so try the variants in order and remember the one each model accepts.
@@ -118,6 +120,7 @@ async function handleGroq(res, { prompt, image, mediaType }) {
     process.env.GROQ_MODEL || "qwen/qwen3.8-27b",
     "qwen/qwen3.6-27b",
   ])];
+  if (process.env.STRICT_MODEL === "1") models.splice(1);
 
   // Qwen models "think" first, which is slow. Try with thinking off + JSON mode, then loosen if the model rejects a setting.
   const VARIANTS = [
