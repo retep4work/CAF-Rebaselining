@@ -9,15 +9,18 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "method_not_allowed" });
 
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return res.status(500).json({ error: "server_not_configured" });
-
   if (process.env.ACCESS_CODE && req.headers["x-access-code"] !== process.env.ACCESS_CODE) {
     return res.status(401).json({ error: "unauthorized" });
   }
 
-  const { prompt, image, mediaType } = req.body || {};
+  const { prompt, image, mediaType, provider } = req.body || {};
   if (!prompt) return res.status(400).json({ error: "bad_request" }); // image is optional (text-only edits)
+
+  // The page's "Use Groq" tick box sends provider: "groq"; anything else means Gemini.
+  if (provider === "groq") return handleGroq(res, { prompt, image, mediaType });
+
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return res.status(500).json({ error: "server_not_configured" });
 
   // Preferred model first, then fallbacks
   const models = [...new Set([
@@ -100,5 +103,83 @@ export default async function handler(req, res) {
   return res.status(lastStatus === 429 ? 429 : 502).json({
     error,
     detail: "All models were busy or out of free quota. Wait a minute and try again.\n\nTried:\n" + tried.join("\n"),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Groq (OpenAI-compatible API). Uses a vision model; falls back to the next one if busy / out of quota.
+// Env: GROQ_API_KEY (required), GROQ_MODEL (optional preferred model).
+// ---------------------------------------------------------------------------
+async function handleGroq(res, { prompt, image, mediaType }) {
+  const key = process.env.GROQ_API_KEY;
+  if (!key) return res.status(500).json({ error: "server_not_configured" });
+
+  const models = [...new Set([
+    process.env.GROQ_MODEL || "meta-llama/llama-4-scout-17b-16e-instruct",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
+  ])];
+
+  const makeBody = model => JSON.stringify({
+    model,
+    temperature: 0,
+    response_format: { type: "json_object" },
+    messages: [{ role: "user", content: [
+      { type: "text", text: prompt },
+      ...(image ? [{ type: "image_url", image_url: { url: `data:${mediaType || "image/jpeg"};base64,${image}` } }] : []),
+    ] }],
+  });
+
+  const started = Date.now();
+  const tried = [];
+  let lastStatus = 502;
+
+  for (const model of models) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      if (Date.now() - started > 32000) break;
+      const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 22000);
+      try {
+        const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+          body: makeBody(model),
+          signal: ctl.signal,
+        });
+        const out = await r.json().catch(() => ({}));
+        clearTimeout(timer);
+
+        if (r.ok) {
+          const text = out.choices?.[0]?.message?.content || "";
+          try {
+            const data = JSON.parse(text.replace(/```json|```/g, "").trim());
+            return res.status(200).json({ data, model: `groq:${model}` });
+          } catch {
+            tried.push(`${model}: invalid JSON`);
+            break; // try next model
+          }
+        }
+
+        lastStatus = r.status;
+        const msg = out?.error?.message || "";
+        tried.push(`${model}: HTTP ${r.status} ${msg.slice(0, 120)}`);
+
+        const retryable =
+          r.status >= 500 || [404, 408, 409, 429].includes(r.status) ||
+          /overload|unavailable|rate limit|quota|try again|capacity/i.test(msg);
+        if (retryable) {
+          if (attempt === 1 && r.status !== 429 && r.status !== 404) { await sleep(2500); continue; }
+          break;
+        }
+        return res.status(502).json({ error: "upstream_error", detail: `[Groq model: ${model}] (HTTP ${r.status}) ${msg}` });
+      } catch (e) {
+        clearTimeout(timer);
+        tried.push(`${model}: ${String(e).slice(0, 100)}`);
+        break;
+      }
+    }
+  }
+
+  return res.status(lastStatus === 429 ? 429 : 502).json({
+    error: lastStatus === 429 ? "rate_limited" : "upstream_error",
+    detail: "Groq was busy or out of free quota. Wait a minute and try again, or untick Groq to use Gemini.\n\nTried:\n" + tried.join("\n"),
   });
 }
