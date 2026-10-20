@@ -477,6 +477,7 @@ async function callApi(prompt, imageB64, retry=true, note){
     const out = await res.json().catch(()=>({}));
     if(res.status===429) throw {code:"rate_limited", attempts:attempt};
     if(!res.ok) throw {code: out.error || ("http_"+res.status), text: out.detail, attempts:attempt};
+    state.modelUsed = out.model || null; // which AI model actually answered (the server may fall back to another one)
     return out.data;
   }
 }
@@ -583,7 +584,7 @@ ${JSON.stringify(askKeys)}
 
 ${rules}${aliasText}
 
-${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JSON object {"blocks_seen":[...],"headers":[...],"rows":[...]} where "blocks_seen" lists the block title bars visible in the image, spelled as written there (use [] if NO block title bar is visible, for example on a continuation page), "headers" lists the column header labels printed in the image from left to right, exactly as written, including empty-looking ones in their position (use [] if NO header row is visible) and "rows" is a JSON array of objects, '}one object for EVERY table row in the image, top to bottom, in order, INCLUDING rows that are completely blank (for a fully blank row write an empty object {}). Never skip, merge, or reorder rows: the array length must equal the number of table rows you can see. Text that wraps onto several lines inside one cell is still ONE cell in ONE row. Each object may use only these keys: ${JSON.stringify(askKeys)}. Include a key ONLY when its cell is visible and has a value; OMIT every blank, unreadable or not-visible key (do not write null). No prose, no markdown fences, just the JSON.`;
+${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JSON object {"blocks_seen":[...],"headers":[...],"rows":[...]} where "blocks_seen" lists the block title bars visible in the image, spelled as written there (use [] if NO block title bar is visible, for example on a continuation page), "headers" lists the column header labels printed in the image from left to right, exactly as written, including empty-looking ones in their position (use [] if NO header row is visible) and "rows" is a JSON array of objects, '}one object for EVERY table row in the image, top to bottom, in order, INCLUDING rows that are completely blank (for a fully blank row write an empty object {}). Never skip, merge, or reorder rows: the array length must equal the number of table rows you can see. Text that wraps onto several lines inside one cell is still ONE cell in ONE row. ${getProvider()==="groq" ? `Every object must have EXACTLY these keys, in this order: ${JSON.stringify(askKeys)}. Work through each row cell by cell, from the left-most column to the right-most: write the cell's value if it has one, and write null if the cell is blank, unreadable or not in the image. A blank cell stays null: NEVER move the next cell's value into it, and never skip a column. Example with the keys ["A","B","C"] and a row whose middle cell is blank: {"A":"x","B":null,"C":"y"}.` : `Each object may use only these keys: ${JSON.stringify(askKeys)}. Include a key ONLY when its cell is visible and has a value; OMIT every blank, unreadable or not-visible key (do not write null).`} No prose, no markdown fences, just the JSON.`;
 
     const b64 = await imageToBase64(file);
     const bandsP = detectBands(state.procCanvas || file);
@@ -725,9 +726,11 @@ ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JS
     const blocksList = [...hitSegs].sort((a,b)=>a-b).map(si => segsW[si] ? segsW[si][2] : "?").join(", ") || "none";
     const profNote = profDropped ? ` Kept the previous paste's columns: ${profDropped} value${profDropped>1?"s":""} in extra columns ignored.` : "";
     const appNote = appFixed ? ` ${appFixed} application number${appFixed>1?"s were":" was"} moved into the Application column.` : "";
+    const modelNote = state.modelUsed ? ` Model: ${state.modelUsed}.` + (state.prevModel && state.prevModel!==state.modelUsed ? ` ⚠ Different from the previous paste (${state.prevModel}). If the alignment looks off, click Undo and extract again.` : "") : "";
     const strikeNote = state.strikeErased ? ` Ignored ${state.strikeErased} struck-out value${state.strikeErased>1?"s":""} (erased from the image before reading).` : "";
-    const blocksNote = strikeNote + appNote + profNote + (!partMode && hitSegs.size ? ` Blocks detected: ${blocksList}.` : "") + contNote + multiNote;
+    const blocksNote = modelNote + strikeNote + appNote + profNote + (!partMode && hitSegs.size ? ` Blocks detected: ${blocksList}.` : "") + contNote + multiNote;
     state.lastProfile = newProfile;
+    state.prevModel = state.modelUsed || state.prevModel;
     if(partMode || hitSegs.size) state.lastBlocks = partMode ? [+pv] : [...hitSegs].sort((a,b)=>a-b);
     const idRows = cleaned.filter(c => c.id);
     const allNew = idRows.length>0; // rows with site details are always their own rows (see below)
@@ -808,7 +811,7 @@ ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JS
         .concat(c.filled.map(([l,v])=>`  + ${l}: ${v}`))
         .concat(c.kept.map(([l,o,v])=>`  = ${l}: kept ${o} (ignored ${v})`)).join("\n");
     }).join("\n\n") || "(no values were filled)";
-    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nNew rows: ${added}\nMerged into existing rows: ${merged}\nBlank rows kept as spacing: ${blankRows}\nApplication numbers moved into the Application column: ${appFixed}\nValues ignored (columns the previous paste did not use): ${profDropped}\nStruck-out values erased from the image: ${state.strikeErased||0}\nExisting values kept (not overwritten): ${kept}\nRow numbers ignored in UNIQUE ID columns: ${rowNo}\nSource fields with no matching column (dropped): ${dropped}\n${multi.length ? "Possible struck-out text (two values in one cell):\n  " + multi.join("\n  ") + "\n\n" : ""}Blocks detected: ${blocksList}${partMode ? " (you chose the part)" : " (auto)"}\nRow alignment: ${alignInfo}\n\nChanges by row (+ filled, = kept existing):\n${lines}`);
+    setLog(`Schema: ${state.schemaKey} (${cols.length} columns)\nNew rows: ${added}\nMerged into existing rows: ${merged}\nAI model used: ${state.modelUsed || "unknown"}${state.prevModel && state.prevModel!==state.modelUsed ? " (previous paste: "+state.prevModel+")" : ""}\nBlank rows kept as spacing: ${blankRows}\nApplication numbers moved into the Application column: ${appFixed}\nValues ignored (columns the previous paste did not use): ${profDropped}\nStruck-out values erased from the image: ${state.strikeErased||0}\nExisting values kept (not overwritten): ${kept}\nRow numbers ignored in UNIQUE ID columns: ${rowNo}\nSource fields with no matching column (dropped): ${dropped}\n${multi.length ? "Possible struck-out text (two values in one cell):\n  " + multi.join("\n  ") + "\n\n" : ""}Blocks detected: ${blocksList}${partMode ? " (you chose the part)" : " (auto)"}\nRow alignment: ${alignInfo}\n\nChanges by row (+ filled, = kept existing):\n${lines}`);
     clearStaged();
   } catch(e){
     const code = e && e.code;
