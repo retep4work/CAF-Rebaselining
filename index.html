@@ -109,6 +109,11 @@ footer{margin-top:28px; font-size:11.5px; color:var(--text-dim); border-top:1px 
 select, input[type=file]{border-radius:6px; min-height:40px;}
 button{border-radius:6px; min-height:40px;}
 #extractBtn{padding:0 28px; font-size:14px;}
+.panel.has-provider{position:relative;}
+.panel.has-provider .provider-opt{position:absolute; top:20px; right:22px;}
+.provider-opt{display:flex; align-items:center; gap:14px;}
+.provider-opt label{display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text); cursor:pointer; user-select:none; white-space:nowrap;}
+.provider-opt input{width:auto; min-height:0; margin:0; cursor:pointer;}
 #aiApply{background:#15803D; color:#fff;}
 .paste-zone{border-color:var(--accent-dim); background:var(--paste-bg); border-radius:8px; color:var(--text);}
 .table-scroll{border-radius:8px;}
@@ -154,8 +159,12 @@ header{position:relative;}
     </div>
   </div>
 
-  <div class="panel">
+  <div class="panel has-provider">
     <p class="step"><span class="num">2</span>Paste the image</p>
+    <div class="provider-opt" role="group" aria-label="AI provider">
+      <label for="useGemini"><input type="checkbox" id="useGemini" checked> Gemini Flash</label>
+      <label for="useGroq"><input type="checkbox" id="useGroq"> Groq</label>
+    </div>
     <div class="row">
       <div class="field" style="flex:1; min-width:220px;">
         <label for="fileInput">Site file (image)</label>
@@ -415,6 +424,26 @@ function imageToBase64(file, maxDim=2000){
   });
 }
 
+// ---------- AI provider choice: unticked = Gemini Flash, ticked = Groq (remembered between visits) ----------
+function getProvider(){
+  const g = document.getElementById("useGroq");
+  return g && g.checked ? "groq" : "gemini";
+}
+(function initProvider(){
+  const gem = document.getElementById("useGemini"), groq = document.getElementById("useGroq");
+  if(!gem || !groq) return;
+  const set = which => {            // exactly one box is always ticked; Gemini Flash is the default
+    gem.checked = which === "gemini"; groq.checked = which === "groq";
+    try{ localStorage.setItem("caf_provider", which); }catch(e){}
+  };
+  let saved = "gemini";
+  try{ saved = localStorage.getItem("caf_provider") === "groq" ? "groq" : "gemini"; }catch(e){}
+  gem.checked = saved === "gemini"; groq.checked = saved === "groq";
+  gem.addEventListener("change", ()=> set("gemini"));   // ticking one unticks the other; unticking re-ticks it
+  groq.addEventListener("change", ()=> set(groq.checked ? "groq" : "gemini"));
+  gem.addEventListener("change", ()=>{ if(!gem.checked) set("gemini"); });
+})();
+
 const sleepMs = ms => new Promise(r => setTimeout(r, ms));
 // Calls the server; on timeouts / busy errors it retries by itself and reports "attempt n of 3" through note().
 async function callApi(prompt, imageB64, retry=true, note){
@@ -426,7 +455,7 @@ async function callApi(prompt, imageB64, retry=true, note){
       res = await fetch("/api/extract", {
         method:"POST",
         headers:{ "Content-Type":"application/json", "x-access-code": localStorage.getItem("caf_access_code") || "" },
-        body: JSON.stringify({ prompt, image: imageB64 || undefined, mediaType: "image/jpeg" })
+        body: JSON.stringify({ prompt, image: imageB64 || undefined, mediaType: "image/jpeg", provider: getProvider() })
       });
     }catch(err){
       if(attempt===MAX) throw {code:"network", attempts:attempt};
@@ -771,7 +800,7 @@ ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JS
       rate_limited: "Too many requests right now — wait a moment and try again.",
       invalid_json: "The reply wasn't valid data — try again, or a clearer image.",
       empty_completion: "Nothing was extracted — try a clearer image.",
-      server_not_configured: "Server is missing GEMINI_API_KEY (set it in Vercel settings).",
+      server_not_configured: "Server is missing the API key for the chosen provider (GEMINI_API_KEY or GROQ_API_KEY — set it in Vercel settings).",
       block_unknown: "This image has no block title bar and I can't tell which block it continues (the last paste had several blocks, or none). Pick the block in the dropdown and extract again.",
       network: "Couldn't reach the server — check your connection and try again.",
     }[code] || ("Extraction failed" + (code?` (${code})`:"") + (e && e.attempts>1 ? ` after ${e.attempts} attempts` : "") + ".");
