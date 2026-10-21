@@ -440,8 +440,8 @@ async function callApi(prompt, imageB64, retry=true, note){
       }
       throw {code:"unauthorized"};
     }
-    if([429,500,502,503,504].includes(res.status) && attempt<MAX){
-      const wait = res.status===429 ? 8000 : 2500*attempt;
+    if([500,502,503,504].includes(res.status) && attempt<MAX){ // 429 (quota) is NOT retried: each retry would only use up more of the free quota
+      const wait = 2500*attempt;
       if(note) note(`attempt ${attempt} of ${MAX} failed (${res.status}) — retrying in ${Math.round(wait/1000)}s`);
       await sleepMs(wait); continue;
     }
@@ -792,7 +792,7 @@ ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JS
     const msg = {
       unauthorized: "Wrong or missing access code.",
       image_rejected: "That file couldn't be read — try a clearer image or different format.",
-      rate_limited: "Too many requests right now — wait a moment and try again.",
+      rate_limited: "Gemini says the free quota is used up (rate limit). A per-minute limit clears in about a minute; a daily limit clears once a day. Check your usage in Google AI Studio, then try again later.",
       invalid_json: "The reply wasn't valid data — try again, or a clearer image.",
       empty_completion: "Nothing was extracted — try a clearer image.",
       server_not_configured: "Server is missing GEMINI_API_KEY (set it in Vercel settings).",
