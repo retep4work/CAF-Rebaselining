@@ -3,7 +3,9 @@
 // Keys:   GEMINI_API_KEY    (required)
 //         GEMINI_API_KEY_2  (optional backup, used only if the first key fails / is out of quota)
 // Model:  GEMINI_MODEL      (optional, default "gemini-flash-latest")
-//         STRICT_MODEL=1    (optional: never fall back to a different model)
+//         GEMINI_MODELS     (optional, comma-separated list tried in order, e.g. "gemini-3.8-flash,gemini-3-flash-preview";
+//                            use models that do NOT redirect to each other, since redirected names share one free quota)
+//         STRICT_MODEL=1    (optional: use only the FIRST model of the list, never fall back)
 //
 // Order tried: preferred model on key 1, preferred model on key 2, then (unless STRICT_MODEL=1) the other models.
 export const config = { maxDuration: 60 };
@@ -34,6 +36,9 @@ export default async function handler(req, res) {
     "gemini-3.1-flash-lite",
     "gemini-2.5-flash-lite",
   ])];
+  // GEMINI_MODELS (Vercel setting): your own ordered list replaces the default list above
+  const custom = (process.env.GEMINI_MODELS || "").split(",").map(x => x.trim()).filter(Boolean);
+  if (custom.length) { models.length = 0; models.push(...new Set(custom)); }
   // STRICT_MODEL=1 (Vercel setting): use only the preferred model, never silently fall back to a different one
   if (process.env.STRICT_MODEL === "1") models.splice(1);
 
