@@ -446,7 +446,7 @@ async function callApi(prompt, imageB64, retry=true, note){
       await sleepMs(wait); continue;
     }
     const out = await res.json().catch(()=>({}));
-    if(res.status===429) throw {code:"rate_limited", attempts:attempt};
+    if(res.status===429) throw {code:"rate_limited", text: out.detail, attempts:attempt}; // detail lists which models/keys were tried
     if(!res.ok) throw {code: out.error || ("http_"+res.status), text: out.detail, attempts:attempt};
     state.modelUsed = out.model || null; // which AI model actually answered (the server may fall back to another one)
     return out.data;
@@ -792,7 +792,7 @@ ${partMode ? "Reply with ONLY a JSON array of objects, " : 'Reply with ONLY a JS
     const msg = {
       unauthorized: "Wrong or missing access code.",
       image_rejected: "That file couldn't be read — try a clearer image or different format.",
-      rate_limited: "Gemini says the free quota is used up (rate limit). A per-minute limit clears in about a minute; a daily limit clears once a day. Check your usage in Google AI Studio, then try again later.",
+      rate_limited: "Gemini says the free quota is used up (rate limit). A per-minute limit clears in about a minute; a daily limit clears once a day. Check your usage in Google AI Studio, then try again later. Open \"Extraction details\" below to see which keys were tried.",
       invalid_json: "The reply wasn't valid data — try again, or a clearer image.",
       empty_completion: "Nothing was extracted — try a clearer image.",
       server_not_configured: "Server is missing GEMINI_API_KEY (set it in Vercel settings).",
