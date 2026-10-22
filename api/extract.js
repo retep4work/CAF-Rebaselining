@@ -91,7 +91,7 @@ export default async function handler(req, res) {
         const msg = out?.error?.message || "";
         // This model doesn't accept that thinking setting: try the next variant on the same attempt
         if (r.status === 400 && /think/i.test(msg) && v < VARIANTS.length - 1) { v++; attempt--; continue; }
-        tried.push(`${tag}: HTTP ${r.status} ${msg.slice(0, 120)}`);
+        tried.push(`${tag}: HTTP ${r.status} ${msg.replace(/\s+/g, " ").slice(0, 600)}`); // keep Google's full explanation (metric, limit, retry time)
 
         // A key that is rejected (bad / revoked / restricted) won't recover: move on to the next combination
         if ((r.status === 401 || r.status === 403) && keys.length > 1) break;
