@@ -47,7 +47,7 @@ export default async function handler(req, res) {
         });
         const j = await r2.json().catch(() => ({}));
         clearTimeout(timer);
-        const msg = (j?.error?.message || "").replace(/\s+/g, " ").slice(0, 80);
+        const msg = (j?.error?.message || "").replace(/\s+/g, " ").slice(0, 450);
         return `${model} (key ${ki + 1}): ` + (r2.ok ? "OK - has free quota" : `HTTP ${r2.status} ${msg}`);
       } catch (e) {
         clearTimeout(timer);
