@@ -906,22 +906,60 @@ function undoLast(){
 
 // ---------- Ask AI to revise the table ----------
 function aiSay(msg, err){ const el = document.getElementById("aiStatus"); el.textContent = msg; el.className = "status" + (err ? " err" : ""); }
+// ---------- Ask AI helpers ----------
+// Keeps only the edits that are valid for this table
+function validateEdits(list, N, valid){
+  const edits = [];
+  for(const e of (list||[])){
+    if(!e) continue;
+    if(e.op==="add_row"){
+      const vals = {};
+      if(e.values && typeof e.values==="object"){
+        for(const [k,v] of Object.entries(e.values)){ if(valid.has(k) && v!==null && v!==undefined && String(v).trim()!=="") vals[k] = v; }
+      }
+      if(!Object.keys(vals).length) continue;
+      const ar = (e.after_row!==null && e.after_row!==undefined && e.after_row!=="" && Number.isInteger(+e.after_row) && +e.after_row>=0 && +e.after_row<=N) ? +e.after_row : null;
+      edits.push({op:"add_row", values:vals, after_row:ar});
+      continue;
+    }
+    if(Number.isInteger(+e.row) && e.row>=1 && e.row<=N && (e.op==="delete_row" || ((e.op==="set" || !e.op) && valid.has(e.column)))) edits.push(e);
+  }
+  return edits;
+}
+// Applies set / delete_row / add_row edits (row numbers refer to the table as it is now) and returns the new row list
+function applyEditsTo(rows, edits, keys){
+  const del = new Set(), adds = [];
+  for(const e of edits){
+    if(e.op==="delete_row"){ del.add(e.row-1); continue; }
+    if(e.op==="add_row"){ adds.push(e); continue; }
+    rows[e.row-1].data[e.column] = (e.value===undefined || e.value==="") ? null : e.value;
+  }
+  const t = Date.now(); let n = 0;
+  const mk = e => { const data = Object.fromEntries(keys.map(k=>[k,null])); for(const [k,v] of Object.entries(e.values)) data[k] = v; return {id: t+"-ai"+(n++), data, addedAt: t+n}; };
+  const out = [];
+  adds.filter(a=>a.after_row===0).forEach(a=>out.push(mk(a)));
+  rows.forEach((r,i)=>{ if(!del.has(i)) out.push(r); adds.filter(a=>a.after_row===i+1).forEach(a=>out.push(mk(a))); });
+  adds.filter(a=>a.after_row===null).forEach(a=>out.push(mk(a)));
+  return out;
+}
+
 async function askAI(){
   const text = document.getElementById("aiPrompt").value.trim();
   const prev = document.getElementById("aiPreview"); prev.innerHTML = "";
   if(!text){ aiSay("Type an instruction first.", true); return; }
-  if(!state.rows.length){ aiSay("There are no rows to revise yet.", true); return; }
   const keys = keysOf(state.schemaKey), segs = SEGMENTS[state.schemaKey] || [];
   const colInfo = keys.map((k,i)=>{ const sg = segs.find(x=>i>=x[0] && i<x[1]); return {key:k, block: sg ? sg[2] : ""}; });
   const rows = state.rows.map((r,i)=>{ const o = {row:i+1}; for(const k of keys){ const v = r.data[k]; if(v!==null && v!==undefined && v!=="") o[k] = v; } return o; });
   const prompt = `You edit a table of extracted telecom site data. Apply the user's instruction and reply with ONLY JSON, no prose, no markdown:
-{"message":"one short sentence of what you changed or why you could not","edits":[{"op":"set","row":1,"column":"<exact key>","value":"<new value or null to clear>"},{"op":"delete_row","row":2}]}
+{"message":"one short sentence of what you changed or why you could not","edits":[{"op":"set","row":1,"column":"<exact key>","value":"<new value or null to clear>"},{"op":"delete_row","row":2},{"op":"add_row","values":{"<exact key>":"<value>"},"after_row":3}]}
 
 Rules:
 - "row" is the 1-based row number shown in the data below.
 - "column" must be EXACTLY one of the keys listed under COLUMNS. Repeated headers have suffixes like " #2"; use COLUMNS' block names (EPA, GROUND SPACE, POWER...) to pick the right one.
 - Change only what the instruction asks. Never invent data. If the instruction is unclear or impossible, return "edits":[] and explain in "message".
 - Cells not shown in a row are empty.
+- To ADD a new row use add_row, with in "values" only what the user gave. "after_row" is optional (the row number to insert after, 0 for the top); leave it out to add the row at the end.
+- "message" must describe ONLY what is inside "edits". Never say you added, changed or deleted something that is not in "edits".
 
 COLUMNS (key and its block):
 ${JSON.stringify(colInfo)}
@@ -935,13 +973,17 @@ INSTRUCTION: ${text}`;
     const out = await callApi(prompt, null, true, m => aiSay('Thinking (' + m + ')…'));
     const list = Array.isArray(out) ? out : (out && Array.isArray(out.edits) ? out.edits : []);
     const valid = new Set(keys);
-    const edits = list.filter(e => e && Number.isInteger(+e.row) && e.row>=1 && e.row<=state.rows.length &&
-      (e.op==="delete_row" || ((e.op==="set" || !e.op) && valid.has(e.column))));
+    const edits = validateEdits(list, state.rows.length, valid);
     const msg = (out && out.message) || "";
-    if(!edits.length){ aiSay(msg || "No changes were suggested.", !msg); return; }
+    // Nothing usable came back: say so plainly (the AI's own wording may claim a change that was never made)
+    if(!edits.length){ aiSay("Nothing was changed. " + (msg ? "The AI said: \"" + msg + "\" — but it gave no valid change. Try rewording, e.g. name the exact column and row." : "The AI did not suggest any valid change."), true); return; }
     state.pendingEdits = edits; aiSay(msg || `${edits.length} change(s) proposed.`);
     const li = edits.slice(0,300).map(e=>{
       if(e.op==="delete_row"){ return `<li>Delete row ${e.row}</li>`; }
+      if(e.op==="add_row"){
+        const where = e.after_row===null ? "at the end" : (e.after_row===0 ? "at the top" : `after row ${e.after_row}`);
+        return `<li>Add a new row ${where}: ` + Object.entries(e.values).map(([k,v])=>`${escapeHtml(k)} = <span class="new">${escapeHtml(String(v))}</span>`).join(", ") + `</li>`;
+      }
       const old = state.rows[e.row-1].data[e.column];
       const o = (old===null||old===undefined||old==="") ? "—" : String(old);
       const n = (e.value===null||e.value===undefined||e.value==="") ? "—" : String(e.value);
@@ -958,12 +1000,7 @@ INSTRUCTION: ${text}`;
 function applyEdits(){
   const edits = state.pendingEdits || [];
   pushUndo("AI edit");
-  const del = new Set();
-  for(const e of edits){
-    if(e.op==="delete_row"){ del.add(e.row-1); continue; }
-    state.rows[e.row-1].data[e.column] = (e.value===undefined || e.value==="") ? null : e.value;
-  }
-  state.rows = state.rows.filter((_,i)=>!del.has(i));
+  state.rows = applyEditsTo(state.rows, edits, keysOf(state.schemaKey));
   state.lastBatch = []; state.pendingEdits = [];
   saveRows(); renderTable();
   document.getElementById("aiPreview").innerHTML = `<div class="ai-prev">Applied ${edits.length} change${edits.length>1?"s":""}. <button class="ghost" id="aiUndo">Undo</button></div>`;
