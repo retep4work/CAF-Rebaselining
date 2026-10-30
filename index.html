@@ -1,208 +1,473 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!DOCTYPE html><html data-theme="light" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1, viewport-fit=cover" name="viewport">
 <title>CAF Site Data Extractor</title>
-<script>try{document.documentElement.setAttribute("data-theme", localStorage.getItem("caf_theme")||"dark");}catch(e){document.documentElement.setAttribute("data-theme","dark");}</script>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script>try{document.documentElement.setAttribute("data-theme", localStorage.getItem("caf_theme")||"light");}catch(e){document.documentElement.setAttribute("data-theme","light");}</script>
+<link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
 <style>
 :root{
-  color-scheme:dark;
-  --bg:#0F1115; --panel:#171B22; --line:#2A303A; --line-soft:#232933;
-  --text:#E6E9EE; --text-dim:#9AA3B2; --accent:#A78BFA; --accent-dim:#6D5BB5;
-  --teal:#4ADE80; --red:#F87171;
-  --on-accent:#0F1115; --hover:rgba(167,139,250,0.08); --paste-bg:#1A1826;
-  --th-bg:#1D222B; --th-fg:#AEB6C4; --zebra:#1A1F27;
-  --gs-bg:#2A303A; --gs-fg:#C9CFD8; --ge-bg:#1E3A5F; --ge-fg:#A9CBFF;
-  --gg-bg:#14402A; --gg-fg:#8FE5AE; --gp-bg:#4A2A12; --gp-fg:#FFB77A; --gf-bg:#33264F; --gf-fg:#D3C2FF;
-  --mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-  --sans:"IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme:light;
+  --bg:#F8FAFC; 
+  --panel:#FFFFFF; 
+  --line:#E2E8F0; 
+  --line-soft:#EDF2F7;
+  --text:#0F172A; 
+  --text-dim:#64748B; 
+  --text-muted:#94A3B8;
+  --accent:#4F46E5; 
+  --accent-hover:#4338CA;
+  --accent-dim:#EEF2FF; 
+  --accent-text:#4338CA;
+  --teal:#10B981; 
+  --teal-bg:#ECFDF5;
+  --teal-border:#A7F3D0;
+  --red:#DC2626; 
+  --red-bg:#FEF2F2;
+  --red-border:#FECACA;
+  --on-accent:#FFFFFF; 
+  --hover:rgba(79, 70, 229, 0.04); 
+  --paste-bg:#F8FAFC;
+  --th-bg:#F8FAFC; 
+  --th-fg:#475569; 
+  --zebra:#F8FAFC;
+  --card-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.03);
+  --elevated-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
+  
+  --gs-bg:#F1F5F9; --gs-fg:#334155; 
+  --ge-bg:#EFF6FF; --ge-fg:#1D4ED8;
+  --gg-bg:#ECFDF5; --gg-fg:#047857; 
+  --gp-bg:#FFF7ED; --gp-fg:#C2410C; 
+  --gf-bg:#FAF5FF; --gf-fg:#6B21A8;
+  
+  --mono:"IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  --sans:"Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
 }
-:root[data-theme="light"]{
-  color-scheme:light;
-  --bg:#F4F6F8; --panel:#FFFFFF; --line:#D3D9E0; --line-soft:#E3E7EC;
-  --text:#1F2937; --text-dim:#5B6472; --accent:#4F46E5; --accent-dim:#A5B4FC;
-  --teal:#15803D; --red:#B42318;
-  --on-accent:#FFFFFF; --hover:rgba(79,70,229,0.07); --paste-bg:#F3F4FF;
-  --th-bg:#F3F5F7; --th-fg:#374151; --zebra:#F9FAFB;
-  --gs-bg:#E5E7EB; --gs-fg:#374151; --ge-bg:#DBEAFE; --ge-fg:#1E40AF;
-  --gg-bg:#DCFCE7; --gg-fg:#166534; --gp-bg:#FFEDD5; --gp-fg:#9A3412; --gf-bg:#EDE9FE; --gf-fg:#5B21B6;
+
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0B0F19; --panel:#111827; --line:#1F2937; --line-soft:#1E293B;
+  --text:#F1F5F9; --text-dim:#94A3B8; --text-muted:#64748B;
+  --accent:#6366F1; --accent-hover:#4F46E5; --accent-dim:#1E1B4B; --accent-text:#A5B4FC;
+  --teal:#34D399; --teal-bg:rgba(16,185,129,0.12); --teal-border:rgba(16,185,129,0.25);
+  --red:#F87171; --red-bg:rgba(239,68,68,0.12); --red-border:rgba(239,68,68,0.25);
+  --on-accent:#FFFFFF; --hover:rgba(99,102,241,0.08); --paste-bg:#0F172A;
+  --th-bg:#1E293B; --th-fg:#94A3B8; --zebra:#0F172A;
+  --card-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.3);
+  --elevated-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --gs-bg:#1E293B; --gs-fg:#94A3B8; --ge-bg:#1E3A8A; --ge-fg:#93C5FD;
+  --gg-bg:#064E3B; --gg-fg:#6EE7B7; --gp-bg:#7C2D12; --gp-fg:#FDBA74; --gf-bg:#581C87; --gf-fg:#D8B4FE;
 }
+
 *{box-sizing:border-box;}
-html,body{height:100%; margin:0;}
+html,body{min-height:100%; margin:0;}
 body{
   background:var(--bg); color:var(--text); font-family:var(--sans);
-  font-size:14px; line-height:1.5;
+  font-size:13.5px; line-height:1.5; -webkit-font-smoothing:antialiased;
 }
-link.gfont{}
-.wrap{max-width:1100px; margin:0 auto; padding:28px 20px 80px;}
-header{border-bottom:1px solid var(--line); padding-bottom:18px; margin-bottom:22px;}
-h1{font-size:19px; font-weight:600; margin:0 0 4px; letter-spacing:-0.01em;}
-header p{margin:0; color:var(--text-dim); font-size:13px;}
 
-.panel{background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:16px; margin-bottom:16px;}
-.row{display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;}
-.field{display:flex; flex-direction:column; gap:5px; min-width:150px;}
-.field label{font-size:11px; color:var(--text-dim);}
+.wrap{max-width:1120px; margin:0 auto; padding:32px 24px 80px;}
+
+header{
+  display:flex; justify-content:space-between; align-items:center;
+  border-bottom:1px solid var(--line); padding-bottom:20px; margin-bottom:24px;
+}
+.brand-meta{display:flex; align-items:flex-start; gap:14px;}
+.brand-icon{
+  width:40px; height:40px; border-radius:10px; background:var(--accent-dim);
+  color:var(--accent); display:flex; align-items:center; justify-content:center;
+  border:1px solid rgba(79, 70, 229, 0.15); flex-shrink:0; margin-top:2px;
+}
+.brand-text h1{
+  font-size:20px; font-weight:700; margin:0 0 4px; letter-spacing:-0.02em; color:var(--text);
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+}
+.badge-version{
+  font-size:11px; font-weight:600; padding:2.5px 8px; border-radius:100px;
+  background:#ECFDF5; color:#065F46; border:1px solid #A7F3D0;
+  letter-spacing:0.02em; text-transform:uppercase; font-family:var(--mono);
+}
+header p{margin:0; color:var(--text-dim); font-size:13px; font-weight:400;}
+
+.header-controls{display:flex; align-items:center; gap:10px;}
+
+.panel{
+  background:var(--panel); border:1px solid var(--line); border-radius:12px;
+  padding:22px 24px; margin-bottom:18px; box-shadow:var(--card-shadow);
+  transition:box-shadow .2s ease;
+}
+.panel:hover{box-shadow:var(--elevated-shadow);}
+
+.step-head{
+  display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;
+}
+.step{
+  display:flex; align-items:center; gap:10px; margin:0;
+  font-size:15px; font-weight:700; color:var(--text); letter-spacing:-0.01em;
+}
+.num{
+  width:24px; height:24px; border-radius:50%; background:var(--accent-dim);
+  color:var(--accent); border:1px solid rgba(79,70,229,0.2);
+  font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center;
+}
+.step-tag{
+  font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em;
+  color:var(--text-dim); background:var(--bg); border:1px solid var(--line);
+  padding:3px 8px; border-radius:6px; font-family:var(--mono);
+}
+
+.row{display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;}
+.field{display:flex; flex-direction:column; gap:6px; min-width:160px;}
+.field label{
+  font-size:12px; font-weight:600; color:var(--text-dim);
+  display:flex; align-items:center; gap:5px;
+}
+
 select, input[type=file]{
+  background:var(--panel); color:var(--text); border:1px solid #CBD5E1;
+  border-radius:8px; padding:8px 12px; font-family:var(--sans); font-size:13px;
+  min-height:40px; transition:border-color .15s, box-shadow .15s; outline:none;
+}
+select:focus, input:focus, textarea:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(79,70,229,0.12);
+}
+select{
+  cursor:pointer;
+  appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2364748B' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+  background-position:right 10px center;
+  background-repeat:no-repeat;
+  background-size:16px;
+  padding-right:32px;
+}
+
+input[type=file]::file-selector-button {
   background:var(--bg); color:var(--text); border:1px solid var(--line);
-  border-radius:3px; padding:8px 10px; font-family:var(--sans); font-size:13px;
+  border-radius:6px; padding:5px 12px; margin-right:12px; font-size:12px;
+  font-weight:600; cursor:pointer; transition:background .15s, border-color .15s;
 }
-select:focus, input:focus, button:focus{outline:2px solid var(--accent); outline-offset:1px;}
+input[type=file]::file-selector-button:hover {
+  background:var(--line-soft); border-color:#CBD5E1;
+}
+
 button{
-  background:var(--accent); color:var(--on-accent); border:none; border-radius:3px;
-  padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer; font-family:var(--sans);
+  display:inline-flex; align-items:center; justify-content:center; gap:7px;
+  background:var(--accent); color:var(--on-accent); border:1px solid transparent; border-radius:8px;
+  padding:0 16px; min-height:40px; font-size:13px; font-weight:600; cursor:pointer;
+  font-family:var(--sans); transition:all .15s ease;
 }
-button:disabled{background:var(--line); color:var(--text-dim); cursor:not-allowed;}
-button.ghost{background:transparent; color:var(--text); border:1px solid var(--line);}
-button.ghost:hover:not(:disabled){border-color:var(--accent);}
-button.danger{background:transparent; color:var(--red); border:1px solid var(--red);}
+button:hover:not(:disabled){background:var(--accent-hover);}
+button:disabled{background:var(--line-soft); border-color:var(--line); color:var(--text-muted); cursor:not-allowed; opacity:0.75;}
+button.ghost{
+  background:var(--panel); color:var(--text); border:1px solid var(--line); box-shadow:0 1px 2px rgba(15,23,42,0.03);
+}
+button.ghost:hover:not(:disabled){
+  background:var(--bg); border-color:#CBD5E1; color:var(--text);
+}
+button.danger{
+  background:var(--panel); color:var(--red); border:1px solid var(--red-border);
+}
+button.danger:hover:not(:disabled){
+  background:var(--red-bg); border-color:var(--red);
+}
 
-.schema-badge{font-size:11px; color:var(--text-dim); font-family:var(--mono);}
+.schema-badge{
+  font-size:12px; font-weight:600; color:var(--teal); font-family:var(--mono);
+  display:inline-flex; align-items:center; gap:5px; background:var(--teal-bg);
+  border:1px solid var(--teal-border); padding:7px 12px; border-radius:8px; height:40px;
+}
+
 .paste-zone{
-  margin-top:12px; border:1.5px dashed var(--line); border-radius:4px; padding:16px;
-  text-align:center; font-size:12.5px; color:var(--text-dim); cursor:text; transition:border-color .15s, color .15s;
+  margin-top:14px; border:1.5px dashed #CBD5E1; border-radius:10px; padding:24px 20px;
+  text-align:center; font-size:13px; color:var(--text-dim); cursor:text;
+  background:var(--paste-bg); transition:all .15s ease; outline:none;
+  display:flex; flex-direction:column; align-items:center; gap:6px;
 }
-.paste-zone:hover, .paste-zone:focus{ border-color:var(--accent); color:var(--text); outline:none; }
-.paste-zone.has-image{ border-style:solid; border-color:var(--teal); color:var(--text); }
-.paste-zone img{max-height:90px; display:block; margin:0 auto 6px; border-radius:3px;}
+.paste-zone:hover, .paste-zone:focus{
+  border-color:var(--accent); background:var(--accent-dim); color:var(--text);
+  box-shadow:0 0 0 3px rgba(79,70,229,0.06);
+}
+.paste-zone.has-image{ border-style:solid; border-color:var(--teal); background:var(--teal-bg); color:var(--text); }
+.paste-zone img{max-height:100px; display:block; margin:0 auto 8px; border-radius:6px; box-shadow:var(--card-shadow);}
+.paste-zone .paste-icon{font-size:28px; color:var(--accent); margin-bottom:2px;}
+.paste-zone kbd, .edit-hint kbd{
+  font-family:var(--mono); font-size:11px; font-weight:600;
+  background:var(--panel); border:1px solid #CBD5E1; border-radius:5px;
+  padding:2px 6px; color:var(--text); box-shadow:0 1px 1px rgba(15,23,42,0.06);
+}
+
 .status{font-size:12.5px; color:var(--text-dim); margin-top:10px; min-height:18px;}
-.status.err{color:var(--red);}
-.status.ok{color:var(--teal);}
+.status.err{color:var(--red); font-weight:500;}
+.status.ok{color:var(--teal); font-weight:500;}
 
-details.log{margin-top:10px; border:1px solid var(--line-soft); border-radius:3px;}
-details.log summary{cursor:pointer; padding:8px 10px; font-size:12px; color:var(--text-dim); user-select:none;}
-details.log pre{margin:0; padding:10px; border-top:1px solid var(--line-soft); font-family:var(--mono); font-size:11.5px; color:var(--text-dim); white-space:pre-wrap; max-height:220px; overflow:auto;}
+details.log{margin-top:12px; border:1px solid var(--line); border-radius:8px; background:var(--bg); overflow:hidden;}
+details.log summary{
+  cursor:pointer; padding:9px 12px; font-size:12px; font-weight:600;
+  color:var(--text-dim); user-select:none; display:flex; align-items:center; gap:6px;
+}
+details.log pre{
+  margin:0; padding:12px; border-top:1px solid var(--line); font-family:var(--mono);
+  font-size:11.5px; color:var(--text); background:var(--panel); white-space:pre-wrap;
+  max-height:220px; overflow:auto;
+}
 
-.table-scroll{overflow-x:auto; border:1px solid var(--line); border-radius:4px;}
-table{border-collapse:collapse; width:max-content; min-width:100%; font-family:var(--mono); font-size:12px;}
-th,td{padding:7px 10px; border-bottom:1px solid var(--line-soft); border-right:1px solid var(--line-soft); white-space:nowrap; text-align:left;}
-th{background:var(--line-soft); color:var(--text-dim); font-weight:600; position:sticky; top:0;}
-td.blank{color:var(--text-dim); font-style:italic;}
-tr:hover td{background:var(--hover);}
-td.del{cursor:pointer; color:var(--text-dim); font-family:var(--sans);}
-td.del:hover{color:var(--red);}
+.edit-hint{
+  display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center;
+  font-size:12px; color:var(--text-dim); margin-bottom:12px;
+}
+.edit-hint .note{margin-left:auto; color:var(--teal); font-weight:600;}
 
-.empty{padding:28px 10px; text-align:center; color:var(--text-dim); font-size:13px;}
-.actions{display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;}
-.count{font-size:12px; color:var(--text-dim); margin-left:auto; align-self:center;}
-th.grp{position:static; text-align:center; background:var(--line); color:var(--text); letter-spacing:.04em; font-size:11px;}
-td.rn{color:var(--text-dim); text-align:right;}
-.ai-box{margin-top:18px; border-top:1px solid var(--line-soft); padding-top:14px;}
-.ai-box label{display:block; font-size:12px; color:var(--text-dim); margin-bottom:6px;}
-.ai-box textarea{width:100%; box-sizing:border-box; background:transparent; color:var(--text); border:1px solid var(--line); border-radius:3px; padding:8px 10px; font:inherit; font-size:13px; resize:vertical;}
-.ai-box .ai-row{display:flex; gap:10px; align-items:flex-start;}
-.ai-box .ai-row button{flex:none;}
-.ai-prev{margin-top:10px; border:1px solid var(--line-soft); border-radius:3px; padding:10px; font-size:12.5px;}
-.ai-prev ul{margin:8px 0; padding-left:18px; max-height:240px; overflow:auto; font-family:var(--mono); font-size:11.5px;}
-.ai-prev .old{color:var(--text-dim); text-decoration:line-through;}
-.ai-prev .new{color:var(--teal);}
-footer{margin-top:28px; font-size:11.5px; color:var(--text-dim); border-top:1px solid var(--line); padding-top:14px;}
+.table-scroll{
+  overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--panel);
+}
+table{border-collapse:separate; border-spacing:0; width:max-content; min-width:100%; font-family:var(--mono); font-size:12px;}
+th,td{
+  padding:8px 12px; border-bottom:1px solid var(--line); border-right:1px solid var(--line);
+  white-space:nowrap; text-align:left;
+}
+th{
+  background:var(--th-bg); color:var(--th-fg); font-weight:600;
+  font-size:11.5px; text-transform:uppercase; letter-spacing:0.03em;
+  position:sticky; top:0; z-index:2;
+}
+th.grp{
+  position:static; text-align:center; font-weight:700; font-size:11px;
+  letter-spacing:.05em; text-transform:uppercase;
+}
+th.grp.gs{background:var(--gs-bg); color:var(--gs-fg); border-bottom:1px solid #CBD5E1;}
+th.grp.ge{background:var(--ge-bg); color:var(--ge-fg); border-bottom:1px solid #BFDBFE;}
+th.grp.gg{background:var(--gg-bg); color:var(--gg-fg); border-bottom:1px solid #A7F3D0;}
+th.grp.gp{background:var(--gp-bg); color:var(--gp-fg); border-bottom:1px solid #FED7AA;}
+th.grp.gf{background:var(--gf-bg); color:var(--gf-fg); border-bottom:1px solid #E9D5FF;}
 
-/* ---- Refined dark / violet ---- */
-.panel{border-radius:10px; padding:20px 22px;}
-.step{display:flex; align-items:center; gap:10px; margin:0 0 14px; font-size:15px; font-weight:600;}
-.num{width:24px; height:24px; border-radius:50%; background:var(--accent); color:var(--on-accent); font-size:13px; display:flex; align-items:center; justify-content:center;}
-select, input[type=file]{border-radius:6px; min-height:40px;}
-button{border-radius:6px; min-height:40px;}
-#extractBtn{padding:0 28px; font-size:14px;}
-#aiApply{background:#15803D; color:#fff;}
-.paste-zone{border-color:var(--accent-dim); background:var(--paste-bg); border-radius:8px; color:var(--text);}
-.table-scroll{border-radius:8px;}
-th{background:var(--th-bg); color:var(--th-fg);}
-th.grp{color:var(--text);}
-th.grp.gs{background:var(--gs-bg); color:var(--gs-fg);}
-th.grp.ge{background:var(--ge-bg); color:var(--ge-fg);}
-th.grp.gg{background:var(--gg-bg); color:var(--gg-fg);}
-th.grp.gp{background:var(--gp-bg); color:var(--gp-fg);}
-th.grp.gf{background:var(--gf-bg); color:var(--gf-fg);}
+td.blank{color:var(--text-muted); font-style:italic;}
 tbody tr:nth-child(even) td{background:var(--zebra);}
-button:disabled{opacity:.45; cursor:default;}
-header{position:relative;}
-.theme-btn{position:absolute; top:0; right:0; padding:0 14px;}
+tbody tr:hover td{background:var(--hover);}
+td.del{cursor:pointer; color:var(--text-muted); text-align:center; font-family:var(--sans); width:28px;}
+td.del:hover{color:var(--red); background:var(--red-bg);}
+td.rn{color:var(--text-muted); text-align:right; font-weight:500;}
+
+td.cell{cursor:cell; transition:background-color .1s;}
+td.cell:hover{outline:1px dashed var(--accent); outline-offset:-2px; background:rgba(79,70,229,0.03);}
+td.chg{box-shadow:inset 3px 0 0 var(--accent); background:rgba(79,70,229,0.03);}
+td.editing{padding:3px 6px; outline:none;}
+input.cell-edit{
+  background:var(--panel); color:var(--text); font:inherit; border:2px solid var(--accent);
+  border-radius:4px; padding:4px 8px; box-shadow:0 0 0 3px rgba(79,70,229,.18);
+  outline:none; min-width:90px; box-sizing:border-box;
+}
+
+.empty{
+  padding:44px 16px; text-align:center; color:var(--text-dim);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+}
+.empty-icon{
+  font-size:38px; color:var(--text-muted); margin-bottom:8px; opacity:0.8;
+}
+
+.actions{
+  display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; align-items:center;
+}
+.count{
+  font-size:12px; font-weight:600; color:var(--text-dim); margin-left:auto;
+  background:var(--bg); border:1px solid var(--line); padding:4px 10px; border-radius:100px;
+  font-family:var(--mono);
+}
+
+.ai-box{
+  margin-top:22px; border-top:1px solid var(--line); padding-top:18px;
+}
+.ai-box-label-row{
+  display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;
+}
+.ai-box label{
+  font-size:12.5px; font-weight:600; color:var(--text);
+  display:flex; align-items:center; gap:6px;
+}
+.ai-tag{
+  font-size:11px; font-weight:600; color:var(--accent); background:var(--accent-dim);
+  border:1px solid rgba(79,70,229,0.18); border-radius:6px; padding:2px 8px; font-family:var(--mono);
+}
+.ai-box textarea{
+  width:100%; box-sizing:border-box; background:var(--panel); color:var(--text);
+  border:1px solid #CBD5E1; border-radius:8px; padding:10px 12px; font:inherit;
+  font-size:13px; resize:vertical; outline:none; transition:border-color .15s, box-shadow .15s;
+}
+.ai-box .ai-row{display:flex; gap:10px; align-items:flex-start;}
+.ai-box .ai-row button{flex:none; min-height:44px;}
+.ai-suggestions{
+  display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;
+}
+.ai-chip{
+  font-size:11.5px; font-family:var(--mono); background:var(--bg); color:var(--text-dim);
+  border:1px solid var(--line); border-radius:6px; padding:4px 9px; cursor:pointer;
+  transition:all .15s ease;
+}
+.ai-chip:hover{
+  background:var(--accent-dim); color:var(--accent); border-color:rgba(79,70,229,0.25);
+}
+.ai-prev{
+  margin-top:12px; border:1px solid var(--line); border-radius:8px; padding:12px;
+  font-size:12.5px; background:var(--bg);
+}
+.ai-prev ul{margin:8px 0; padding-left:18px; max-height:240px; overflow:auto; font-family:var(--mono); font-size:11.5px;}
+.ai-prev .old{color:var(--text-muted); text-decoration:line-through;}
+.ai-prev .new{color:var(--teal); font-weight:600;}
+
+footer{
+  margin-top:32px; font-size:12px; color:var(--text-dim);
+  border-top:1px solid var(--line); padding-top:18px; line-height:1.6;
+}
+.footer-meta{
+  display:flex; justify-content:center; text-align:center; align-items:center; flex-wrap:wrap;
+  gap:12px; margin-top:12px; padding-top:12px; border-top:1px dashed var(--line);
+}
+#aiApply{background:#047857;}
+#aiApply:hover:not(:disabled){background:#065F46;}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <button class="ghost theme-btn" id="themeBtn" title="Switch between light and dark theme">☀ Light</button>
-    <h1>CAF Site Data Extractor</h1>
-    <p>Upload a vendor CAF file → AI reads it against the exact reference header → rows append to a running table.</p>
-  </header>
+<header>
+<div class="brand-meta">
 
-  <div class="panel">
-    <p class="step"><span class="num">1</span>Choose the form</p>
-    <div class="row">
-      <div class="field">
-        <label for="vendorSel">Vendor</label>
-        <select id="vendorSel"></select>
-      </div>
-      <div class="field" id="cafField">
-        <label for="cafSel">CAF number</label>
-        <select id="cafSel"></select>
-      </div>
-      <div class="field" id="partField">
-        <label for="partSel">Part of the form (this image)</label>
-        <select id="partSel" style="max-width:340px"></select>
-      </div>
-      <div class="field">
-        <span class="schema-badge" id="schemaBadge"></span>
-      </div>
-    </div>
-  </div>
+<div class="brand-text">
+<h1 class="">CAF Site Data Extractor </h1>
+<p class="">Intelligent OCR &amp; schema parser — extracted fields map directly into verified database columns</p>
+</div>
+</div>
+<div class="header-controls">
+<button class="ghost theme-btn" id="themeBtn" title="Switch theme"><span class="material-symbols-outlined" style="font-size: 16px;">dark_mode</span><span class="">Dark</span></button>
+</div>
+</header>
+<div class="panel">
+<div class="step-head">
+<p class="step"><span class="num">1</span>Choose the form</p>
+<span class="step-tag">Schema Configuration</span>
+</div>
+<div class="row">
+<div class="field">
+<label for="vendorSel" class=""><span class="material-symbols-outlined" style="font-size: 14px;">business</span> Vendor</label>
+<select id="vendorSel"></select>
+</div>
+<div class="field" id="cafField">
+<label for="cafSel" class=""><span class="material-symbols-outlined" style="font-size: 14px;">tag</span> CAF number</label>
+<select id="cafSel"></select>
+</div>
+<div class="field" id="partField" style="flex:2; min-width:240px;">
+<label for="partSel" class=""><span class="material-symbols-outlined" style="font-size: 14px;">view_quilt</span> Part of the form (this image)</label>
+<select id="partSel" style="max-width:100%"></select>
+</div>
+<div class="field" style="flex:0 0 auto; min-width:auto;">
+<label class="">&nbsp;</label>
+<span class="schema-badge" id="schemaBadge"><span class="material-symbols-outlined" style="font-size: 16px;">check_circle</span> Ready</span>
+</div>
+</div>
+</div>
+<div class="panel">
+<div class="step-head">
+<p class="step"><span class="num">2</span>Paste or upload image</p>
 
-  <div class="panel">
-    <p class="step"><span class="num">2</span>Paste the image</p>
-    <div class="row">
-      <div class="field" style="flex:1; min-width:220px;">
-        <label for="fileInput">Site file (image)</label>
-        <input type="file" id="fileInput" accept="image/*">
-      </div>
-      <button id="extractBtn">Extract</button>
-    </div>
-    <div class="paste-zone" id="pasteZone" tabindex="0">
-      Click here, then <strong>Ctrl+V</strong> (or <strong>Cmd+V</strong>) to paste a copied image — or use the file picker above.
-    </div>
-        <div class="status" id="status"></div>
-    <details class="log" id="logBox" hidden>
-      <summary>Extraction details</summary>
-      <pre id="logText"></pre>
-    </details>
-  </div>
-
-  <div class="panel">
-    <p class="step"><span class="num">3</span>Review and edit</p>
-    <div class="table-scroll" id="tableScroll">
-      <div class="empty" id="emptyMsg">No rows yet for this vendor/CAF. Extract a file above to begin.</div>
-    </div>
-    <div class="actions">
-      <button class="ghost" id="copyBtn">Copy as TSV (paste into Sheets)</button>
-      <button class="ghost" id="downloadBtn">Download .csv</button>
-      <button class="ghost" id="undoBtn" disabled title="Undo (Cmd/Ctrl + Z)">Undo</button>
-      <button class="danger" id="resetBtn">Reset table</button>
-      <span class="count" id="rowCount"></span>
-    </div>
-    <div class="ai-box">
-      <label for="aiPrompt">Ask AI to revise the table (change values, clear a column, delete rows…)</label>
-      <div class="ai-row">
-        <textarea id="aiPrompt" rows="2" placeholder='e.g. "Set COST to 0 for row 2" · "Make all Site Names uppercase" · "Delete row 3" · "Clear REMARKS in the POWER block"'></textarea>
-        <button id="aiBtn">Ask AI</button>
-      </div>
-      <div class="status" id="aiStatus"></div>
-      <div id="aiPreview"></div>
-    </div>
-  </div>
-
-  <footer>
-    Headers are fixed per the reference schema — columns are never added, renamed, or reordered. Rows are saved in this browser only — use Copy or Download CSV to keep them.
-    <div style="margin-top:10px; text-align:center;">CAF Site Data Extractor &middot; Created by <b style="color:var(--text); font-weight:600;">Peter John Severino</b> &middot; &copy; 2026</div>
-  </footer>
+</div>
+<div class="row">
+<div class="field" style="flex:1; min-width:240px;">
+<label for="fileInput" class=""><span class="material-symbols-outlined" style="font-size: 14px;">attach_file</span> Site file (image / screenshot)</label>
+<input accept="image/*" id="fileInput" type="file">
+</div>
+<button id="extractBtn" class=""><span class="material-symbols-outlined" style="font-size: 16px;">bolt</span> Extract Data</button>
+</div>
+<div class="paste-zone" id="pasteZone" tabindex="0">
+<span class="material-symbols-outlined paste-icon">content_paste_go</span>
+<div style="font-weight: 500;" class="">Click here, then press <kbd>Ctrl + V</kbd> or <kbd>⌘ + V</kbd> to paste a clipboard screenshot</div>
+<span style="font-size: 12px; color: var(--text-muted);" class="">Supports PNG, JPG, WebP from snippet tools or mobile upload</span>
+</div>
+<div class="status" id="status"></div>
+<details class="log" hidden="" id="logBox">
+<summary class=""><span class="material-symbols-outlined" style="font-size: 15px;">terminal</span> Extraction details &amp; raw tokens</summary>
+<pre id="logText"></pre>
+</details>
+</div>
+<div class="panel">
+<div class="step-head">
+<p class="step"><span class="num">3</span>Review and edit</p>
+<span class="step-tag">Interactive Grid</span>
+</div>
+<div class="edit-hint">
+<span style="display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--text);" class="">
+<span class="material-symbols-outlined" style="font-size: 16px; color: var(--accent);">edit_note</span> Double-click any cell to edit
+</span>
+<span class=""><kbd>Enter</kbd> save</span>
+<span class=""><kbd>Esc</kbd> cancel</span>
+<span class=""><kbd>Tab</kbd> next cell</span>
+<span class="note" id="editNote"></span>
+</div>
+<div class="table-scroll" id="tableScroll">
+<div class="empty" id="emptyMsg">
+<span class="material-symbols-outlined empty-icon">table_chart_view</span>
+<div style="font-weight: 600; color: var(--text); font-size: 14px; margin-bottom: 4px;" class="">No rows extracted yet</div>
+<div style="font-size: 12.5px; color: var(--text-dim); max-width: 380px;" class="">Select your vendor CAF configuration and extract an image in Step 2 to populate live validated records.</div>
+</div>
+</div>
+<div class="actions">
+<button class="ghost" id="addRowBtn"><span class="material-symbols-outlined" style="font-size: 15px;">add</span> Add row</button>
+<button class="ghost" id="copyBtn"><span class="material-symbols-outlined" style="font-size: 15px;">content_copy</span> Copy as TSV</button>
+<button class="ghost" id="downloadBtn"><span class="material-symbols-outlined" style="font-size: 15px;">download</span> Download .csv</button>
+<button class="ghost" disabled="" id="undoBtn" title="Undo (Cmd/Ctrl + Z)"><span class="material-symbols-outlined" style="font-size: 15px;">undo</span> Undo</button>
+<button class="danger" id="resetBtn"><span class="material-symbols-outlined" style="font-size: 15px;">delete_sweep</span> Reset table</button>
+<span class="count" id="rowCount">0 rows</span>
+</div>
+<div class="ai-box">
+<div class="ai-box-label-row">
+<label for="aiPrompt" class="">
+<span class="material-symbols-outlined" style="font-size: 16px; color: var(--accent);">auto_awesome</span>
+          Ask AI
+        </label>
+</div>
+<div class="ai-row">
+<textarea id="aiPrompt" placeholder="Ask AI to revise the table (e.g. 'Set COST to 0 for row 2', 'Uppercase all Site Names', 'Clear REMARKS in POWER')" rows="2"></textarea>
+<button id="aiBtn" class=""><span class="material-symbols-outlined" style="font-size: 15px;">send</span> Ask AI</button>
+</div>
+<div class="status" id="aiStatus"></div>
+<div id="aiPreview"></div>
+</div>
+</div>
+<footer>
+<div class="">Headers are strictly mapped per reference enterprise schema — columns are never added, renamed, or reordered. Data remains private and cached locally in your browser session.</div>
+<div class="footer-meta">
+<span class="">CAF Site Data Extractor • Created by <strong style="color:var(--text);font-weight:600;">Peter John Severino</strong> © 2026</span>
+</div>
+</footer>
 </div>
 
 <script>
+// Keep theme toggling & persistence
+const themeBtn = document.getElementById("themeBtn");
+function updateThemeBtn(th) {
+  if (!themeBtn) return;
+  if (th === "dark") {
+    themeBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;">wb_sunny</span><span>Light</span>';
+  } else {
+    themeBtn.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;">dark_mode</span><span>Dark</span>';
+  }
+}
+
+themeBtn?.addEventListener("click", () => {
+  const cur = document.documentElement.getAttribute("data-theme") || "light";
+  const next = cur === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem("caf_theme", next); } catch(e){}
+  updateThemeBtn(next);
+});
+
+// Initialize button text on load
+const currentInitTheme = document.documentElement.getAttribute("data-theme") || "light";
+updateThemeBtn(currentInitTheme);
+</script>
+
+<script>
+
 const SCHEMAS = {"FTAP_CAF1_Format":["AREA","TOWER CO SITE ID","PLA ID","Site Name","MTD 0","AUDIT 0","EPA RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","UTILIZATION","MTD 1","UNUTILIZED","MTD 0","AUDIT 0","GRD RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","UTILIZATION","MTD 1","UNUTILIZED","MTD 0","AUDIT 0","PWR RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","UTILIZATION","MTD 1","UNUTILIZED"],"FTAP_CAF2_Format":["CAF Refence","Application","AREA","TOWER CO SITE ID","GT Site ID","Site Name","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Final EPA after expansion","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","MTD 2","UNUTILIZED 2","REMARKS [EPA]","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Final EPA after expansion","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","MTD 2","UNUTILIZED 2","REMARKS [GRD]","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","RESERVED FROM AUDIT","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Final EPA after expansion","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","REMARKS [PWR]","MTD 2","UNUTILIZED 2","CHANGE REQUEST SCOPE","OBJECTIVES","ACTIVITIES NEEDED"],"MIDC_CAF1_Format":["APPROVED DATE","UNIQUE_ID","TOWERCO Name","AREA","TOWER CO SITE ID","GT Site ID","Site Name","MTD 0","AUDIT 0 / CAF1 UTILIZED","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF1 UPDATED RESERVED","CAF1 UNUTILIZED","MTD 0","AUDIT 0 / CAF1 UTILIZED","RESERVED OR EXCESS","COST","CAF1 UPDATED RESERVED","MTD 0","AUDIT 0 / CAF1 UTILIZED","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF1 UPDATED RESERVED","CAF1 UNUTILIZED"],"MIDC_CAF2_Format":["APPROVED DATE","TOWER CO SITE ID","TOWERCO Name","AREA","UNIQUE ID","Site ID","Site Name","CAF1 UPDATED RESERVED","CAF1 UTILIZED","CAF1 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","CAF1 UPDATED RESERVED","CAF1 UTILIZED","CAF1 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","CAF1 UPDATED RESERVED","CAF1 UTILIZED","CAF1 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","GRID TYPE","TOWER","POWER","GROUND SPACE","REMARKS"],"MIDC_CAF3_Format":["AMCEO APPROVED DATE","UNIQUE_ID","TOWERCO NAME","AREA","TOWER CO SITEID","GT Site ID","Site Name","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY","COST","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","COST","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","GRID","TOWER","POWER","GROUND SPACE","AMB","REMARKS"],"NON-SLB":["CAF Year","CAF Type","HERMES/NON HERMES","TOWERCO Name","CAF File Name Reference","CAF Approved Date","Territory","Unique ID / Request Reference","TOWER CO SITE ID","GT Site ID","Site Name","MTD 0","AUDIT 0","MTD1","UNUTILIZED1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","MTD 2","UTILIZED 2","UNUTILIZED 2","REMARKS [EPA]","VERTICAL SPACE MLA RESERVED CAPACITY","EXCESS IN VERTICAL","COST","REMARKS [VERTICAL]","MTD 0","AUDIT 0","MTD1","UNUTILIZED1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","MTD 2","UTILIZED 2","UNUTILIZED 2","REMARKS [GRD]","MTD 0","AUDIT 0","MTD1","UNUTILIZED1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","MTD 2","UTILIZED 2","UNUTILIZED 2","REMARKS [PWR]","GRID","TOWER","POWER","GROUND SPACE","REMARKS"],"PTCI_CAF1_Format":["APPROVED DATE","UNIQUIE_ID","TOWERCO Name","AREA","TOWER CO SITE ID","GT Site ID","Site Name","MTD 0","AUDIT 0 / CAF1 UTILIZED","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF1 UPDATED RESERVED","CAF1 UNUTILIZED","MTD 0","AUDIT 0 / CAF1 UTILIZED","RESERVED OR EXCESS","COST","CAF1 UPDATED RESERVED","MTD 0","AUDIT 0 / CAF1 UTILIZED","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF1 UPDATED RESERVED","CAF1 UNUTILIZED"],"PTCI_CAF2_Format":["APPROVED DATE","UNIQUIE_ID","HERMES/ NON HERMES","TOWERCO Name","AREA","TOWER CO SITE ID","GT Site ID","Site Name","CAF1 UPDATED RESERVED","CAF1 UTILIZED","CAF1 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","CAF1 UPDATED RESERVED","CAF1 UTILIZED","CAF1 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF1 UPDATED RESERVED","CAF1 UTILIZED","CAF1 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","TOWER","POWER","GROUND SPACE","REMARKS"],"PTCI_CAF3_Format":["APPROVED DATE","UNIQUIE_ID","HERMES/ NON HERMES","TOWERCO Name","AREA","TOWER CO SITE ID","GT Site ID","Site Name","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUND UP)","COST","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","CAF2 UPDATED RESERVED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","COST","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","CAF2 UPDATED RESERVED","CAF2 UTILIZED","CAF2 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","GRID","Tower","Ground Space","Power","Overall Remarks","GT REMARKS"],"PTCI_CAF4_Format":["APPROVED DATE","UNIQUIE_ID","HERMES/NON HERMES","TOWERCO NAME","AREA","TOWER CO SITEID","GT Site ID","Site Name","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF4 UPDATED RESERVED","CAF4 UTILIZED","CAF4 UNUTILIZED","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","COST","CAF4 UPDATED RESERVED","CAF4 UTILIZED","CAF4 UNUTILIZED","CAF3 UPDATED RESERVED","CAF3 UTILIZED","CAF3 UNUTILIZED","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","Net Upgrade","RESERVED OR EXCESS","ADDITIONAL CAPACITY (ROUNDUP)","COST","CAF4 UPDATED RESERVED","CAF4 UTILIZED","CAF4 UNUTILIZED","GRID","TOWER","POWER","GROUND SPACE","CME","REMARKS"],"UNITY_CAF1_Format":["PLA ID","Site Name","TowerCo","EPA [MTD 0]","EPA [AUDIT]","EXCESS EPA [ AUDIT - MTD]","EPA [COST]","GRD [MTD 0]","GRD [AUDIT]","EXCESS GRD[ AUDIT - MTD]","GRD [COST]","PWR [MTD 0]","PWR [AUDIT]","EXCESS PWR [ AUDIT - MTD]","PWR [COST]","GRID"],"UNITY_CAF2_Format":["NSB/SLB","Yr","HERMES/NON HERMES","CAF2 Approved Date","UDI APP #","TCO","AREA","Territory Tagging","TOWER CO SITE ID","GT Site ID","Site Name","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","Cost","MTD 2","UNUTILIZED 2","Remarks","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","COST","MTD 2","UNUTILIZED 2","Remarks","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","COST","MTD 2","UNUTILIZED 2","Remarks","TOWER","POWER","GROUND SPACE","REMARKS"],"UNITY_CAF3_Format":["NSB/SLB","Yr","HERMES/NON HERMES","CAF Approved Date","UDI APP #","TCO","AREA","Territory Tagging","TOWER CO SITE ID","GT Site ID","Site Name","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","Cost","MTD 2","UNUTILIZED 2","Remarks","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","COST","MTD 2","UNUTILIZED 2","Remarks","MTD 0","AUDIT 0","MTD 1","UNUTILIZED 1","DISMANTLING","REQUIREMENT (ADDITIONAL EQUIPMENT)","RESERVED OR EXCESS","COST","MTD 2","UNUTILIZED 2","Remarks","Grid Status","TOWER","POWER","GROUND SPACE","REMARKS"]};
 const SEGMENTS = {"FTAP_CAF1_Format":[[0,4,"SITE DETAILS"],[4,12,"EPA"],[12,20,"GROUND SPACE"],[20,28,"POWER"]],"FTAP_CAF2_Format":[[0,6,"SITE DETAILS"],[6,19,"EPA"],[19,32,"GROUND SPACE"],[32,46,"POWER"],[46,49,"CHANGE REQUEST REMARKS"]],"MIDC_CAF1_Format":[[0,7,"SITE DETAILS"],[7,14,"EPA"],[14,19,"GROUND SPACE"],[19,26,"POWER"]],"MIDC_CAF2_Format":[[0,7,"SITE DETAILS"],[7,19,"EPA"],[19,31,"GROUND SPACE"],[31,44,"POWER"],[44,48,"FACILITY UPGRADE"]],"MIDC_CAF3_Format":[[0,7,"SITE DETAILS"],[7,19,"EPA"],[19,29,"GROUND SPACE"],[29,42,"POWER"],[42,47,"FACILITY UPGRADE"]],"NON-SLB":[[0,11,"SITE DETAILS"],[11,28,"EPA"],[28,41,"GROUND SPACE"],[41,55,"POWER"],[55,59,"FACILITY UPGRADE"]],"PTCI_CAF1_Format":[[0,7,"SITE DETAILS"],[7,14,"EPA"],[14,19,"GROUND SPACE"],[19,26,"POWER"]],"PTCI_CAF2_Format":[[0,8,"SITE DETAILS"],[8,20,"EPA"],[20,31,"GROUND SPACE"],[31,43,"POWER"],[43,47,"FACILITY UPGRADE"]],"PTCI_CAF3_Format":[[0,8,"SITE DETAILS"],[8,20,"EPA"],[20,28,"GROUND SPACE"],[28,40,"POWER"],[40,45,"FACILITY UPGRADE"]],"PTCI_CAF4_Format":[[0,8,"SITE DETAILS"],[8,20,"EPA"],[20,31,"GROUND SPACE"],[31,44,"POWER"],[44,49,"FACILITY UPGRADE"]],"UNITY_CAF1_Format":[[0,3,"SITE DETAILS"],[3,7,"EPA"],[7,11,"GROUND SPACE"],[11,16,"POWER"]],"UNITY_CAF2_Format":[[0,11,"SITE DETAILS"],[11,22,"EPA"],[22,33,"GROUND SPACE"],[33,44,"POWER"],[44,48,"FACILITY UPGRADE"]],"UNITY_CAF3_Format":[[0,11,"SITE DETAILS"],[11,22,"EPA"],[22,33,"GROUND SPACE"],[33,45,"POWER"],[45,49,"FACILITY UPGRADE"]]};
 const VENDORS = {"NON-SLB":[["","NON-SLB"]],"PTCI":[["CAF1","PTCI_CAF1_Format"],["CAF2","PTCI_CAF2_Format"],["CAF3","PTCI_CAF3_Format"],["CAF4","PTCI_CAF4_Format"]],"UNITY":[["CAF1","UNITY_CAF1_Format"],["CAF2","UNITY_CAF2_Format"],["CAF3","UNITY_CAF3_Format"]],"FTAP":[["CAF1","FTAP_CAF1_Format"],["CAF2","FTAP_CAF2_Format"]],"MIDC":[["CAF1","MIDC_CAF1_Format"],["CAF2","MIDC_CAF2_Format"],["CAF3","MIDC_CAF3_Format"]]};
@@ -233,7 +498,7 @@ function clearStaged(){
   state.stagedFile = null;
   const zone = document.getElementById("pasteZone");
   zone.classList.remove("has-image");
-  zone.innerHTML = `Click here, then <strong>Ctrl+V</strong> (or <strong>Cmd+V</strong>) to paste a copied image — or use the file picker above.`;
+  zone.innerHTML = `<span class="material-symbols-outlined paste-icon">content_paste_go</span><div style="font-weight: 500;">Click here, then press <kbd>Ctrl + V</kbd> or <kbd>⌘ + V</kbd> to paste a clipboard screenshot</div><span style="font-size: 12px; color: var(--text-muted);">Supports PNG, JPG, WebP from snippet tools or mobile upload</span>`;
 }
 
 // Unique keys per column (repeated names get " #2", " #3" so they stay separate)
@@ -286,7 +551,7 @@ function switchSchema(){
   const key = schemaKeyFor(state.vendor, state.caf);
   state.schemaKey = key;
   const cols = SCHEMAS[key];
-  document.getElementById("schemaBadge").textContent = `Schema: ${key} — ${cols.length} columns`;
+  document.getElementById("schemaBadge").innerHTML = '<span class="material-symbols-outlined" style="font-size:16px;">check_circle</span> ' + escapeHtml(`Schema: ${key} — ${cols.length} columns`);
   populatePart();
   loadRows();
 }
@@ -307,10 +572,10 @@ function renderTable(){
   const cols = SCHEMAS[state.schemaKey];
   const keys = keysOf(state.schemaKey);
   const scroll = document.getElementById("tableScroll");
-  const empty = document.getElementById("emptyMsg");
+  const empty = window.__emptyNode || (window.__emptyNode = document.getElementById("emptyMsg"));
   document.getElementById("rowCount").textContent = state.rows.length ? `${state.rows.length} row${state.rows.length>1?"s":""}` : "";
   if(!state.rows.length){
-    scroll.innerHTML = ""; scroll.appendChild(empty); empty.style.display="block";
+    scroll.innerHTML = ""; scroll.appendChild(empty); empty.style.display="flex";
     return;
   }
   const segs = SEGMENTS[state.schemaKey] || [];
@@ -319,7 +584,8 @@ function renderTable(){
   state.rows.forEach((row, ri)=>{
     html += `<tr><td class="rn">${ri+1}</td>` + cols.map((c,ci)=>{
       const k = keys[ci]; const v = row.data ? row.data[k] : row[k];
-      return (v===null||v===undefined||v==="") ? `<td class="blank">—</td>` : `<td>${escapeHtml(String(v))}</td>`;
+      const chg = (row.ed && row.ed[k]) ? " chg" : "";
+      return (v===null||v===undefined||v==="") ? `<td class="cell blank${chg}" data-r="${ri}" data-c="${ci}">—</td>` : `<td class="cell${chg}" data-r="${ri}" data-c="${ci}">${escapeHtml(String(v))}</td>`;
     }).join("") + `<td class="del" data-id="${row.id}" title="Delete row">✕</td></tr>`;
   });
   html += "</tbody></table>";
@@ -329,6 +595,69 @@ function renderTable(){
   });
 }
 function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+
+
+// ---------- Click-to-edit cells (manual typing is never blocked by the "never overwrite" rule, which is only for AI image reading) ----------
+function redraw(){
+  const sc = document.getElementById("tableScroll"); const l = sc.scrollLeft, t = sc.scrollTop;
+  renderTable(); sc.scrollLeft = l; sc.scrollTop = t;
+}
+function nextCell(r, ci, move, nCols){
+  let nr = r, nc = ci + move;
+  if(nc >= nCols){ nc = 0; nr = r + 1; } else if(nc < 0){ nc = nCols - 1; nr = r - 1; }
+  return [nr, nc];
+}
+function commitCell(r, ci, val){
+  const keys = keysOf(state.schemaKey), k = keys[ci], row = state.rows[r];
+  const nv = String(val).trim()==="" ? null : String(val).trim();
+  const ov = (row.data[k]===undefined) ? null : row.data[k];
+  if(String(nv)===String(ov)){ redraw(); return false; }
+  pushUndo("cell edit");
+  row.data[k] = nv; row.ed = row.ed || {}; row.ed[k] = 1;
+  state.lastBatch = [];
+  saveRows(); redraw();
+  document.getElementById("editNote").textContent = `Cell updated: row ${r+1} · ${SCHEMAS[state.schemaKey][ci]}. Undo is ready.`;
+  return true;
+}
+let activeFinish = null;
+function startEdit(r, ci){
+  if(activeFinish){ const f = activeFinish; activeFinish = null; f(true); } // close the cell being edited first
+  const td = document.querySelector(`#tableScroll td.cell[data-r="${r}"][data-c="${ci}"]`);
+  const row = state.rows[r];
+  if(!td || !row) return;
+  const k = keysOf(state.schemaKey)[ci], cur = row.data[k];
+  const w = Math.max(td.offsetWidth - 6, 90);
+  td.classList.add("editing"); td.textContent = "";
+  const inp = document.createElement("input");
+  inp.type = "text"; inp.className = "cell-edit"; inp.value = (cur===null || cur===undefined) ? "" : String(cur); inp.style.width = w + "px";
+  td.appendChild(inp); inp.focus(); inp.select();
+  let done = false;
+  const finish = (save, move)=>{
+    if(done) return; done = true; activeFinish = null;
+    if(save) commitCell(r, ci, inp.value); else redraw();
+    if(move){
+      const [nr, nc] = nextCell(r, ci, move, SCHEMAS[state.schemaKey].length);
+      if(nr >= 0 && nr < state.rows.length) startEdit(nr, nc);
+    }
+  };
+  activeFinish = finish;
+  inp.addEventListener("keydown", e=>{
+    if(e.key==="Enter"){ e.preventDefault(); finish(true); }
+    else if(e.key==="Escape"){ e.preventDefault(); finish(false); }
+    else if(e.key==="Tab"){ e.preventDefault(); finish(true, e.shiftKey ? -1 : 1); }
+  });
+  inp.addEventListener("input", ()=>{ inp.style.width = Math.max(w, inp.value.length*8 + 28) + "px"; });
+  inp.addEventListener("blur", ()=> finish(true));
+}
+function addRow(){
+  pushUndo("add row");
+  const keys = keysOf(state.schemaKey);
+  state.rows.push({id: Date.now()+"-m", data: Object.fromEntries(keys.map(k=>[k,null])), addedAt: Date.now()});
+  state.lastBatch = [];
+  saveRows(); redraw();
+  const sc = document.getElementById("tableScroll"); sc.scrollTop = sc.scrollHeight;
+  document.getElementById("editNote").textContent = `Row ${state.rows.length} added. Double-click a cell to fill it. Undo is ready.`;
+}
 
 function deleteRow(id){
   pushUndo("row delete");
@@ -889,7 +1218,8 @@ function updateUndoBtn(){
   const b = document.getElementById("undoBtn"); if(!b) return;
   const st = state.undoStack || [];
   b.disabled = !st.length;
-  b.textContent = st.length ? (st[st.length-1].btn || "Undo " + st[st.length-1].label) : "Undo";
+  const lbl = st.length ? (st[st.length-1].btn || "Undo " + st[st.length-1].label) : "Undo";
+  b.innerHTML = '<span class="material-symbols-outlined" style="font-size:15px;">undo</span> ' + escapeHtml(lbl);
 }
 function pushUndo(label, btn){
   state.undoStack = state.undoStack || [];
@@ -1007,17 +1337,14 @@ function applyEdits(){
   document.getElementById("aiUndo").onclick = ()=>{ undoLast(); document.getElementById("aiPreview").innerHTML = ""; };
   aiSay("");
 }
-function applyTheme(t){
-  document.documentElement.setAttribute("data-theme", t);
-  document.getElementById("themeBtn").textContent = t==="dark" ? "☀ Light" : "☾ Dark";
-}
-document.getElementById("themeBtn").onclick = ()=>{
-  const t = document.documentElement.getAttribute("data-theme")==="dark" ? "light" : "dark";
-  try{ localStorage.setItem("caf_theme", t); }catch(e){}
-  applyTheme(t);
-};
-applyTheme(document.documentElement.getAttribute("data-theme") || "dark");
 document.getElementById("undoBtn").onclick = undoLast;
+document.getElementById("addRowBtn").onclick = addRow;
+document.getElementById("tableScroll").addEventListener("dblclick", e=>{
+  const td = e.target.closest ? e.target.closest("td.cell") : null;
+  if(!td || e.target.tagName==="INPUT") return;
+  const sel = window.getSelection && window.getSelection(); if(sel) sel.removeAllRanges(); // no stray text highlight
+  startEdit(+td.dataset.r, +td.dataset.c);
+});
 document.addEventListener("keydown", e=>{
   const t = e.target && e.target.tagName;
   if((e.metaKey||e.ctrlKey) && !e.shiftKey && e.key.toLowerCase()==="z" && t!=="TEXTAREA" && t!=="INPUT" && t!=="SELECT"){ e.preventDefault(); undoLast(); }
@@ -1026,6 +1353,6 @@ document.getElementById("aiBtn").onclick = askAI;
 document.getElementById("aiPrompt").addEventListener("keydown", e=>{ if((e.metaKey||e.ctrlKey) && e.key==="Enter") askAI(); });
 
 init();
+
 </script>
-</body>
-</html>
+</body></html>
