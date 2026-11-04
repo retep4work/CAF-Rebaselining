@@ -9,7 +9,6 @@
 //
 // Order tried: preferred model on key 1, preferred model on key 2, then (unless STRICT_MODEL=1) the other models.
 export const config = { maxDuration: 60 };
-const CODE_VERSION = "extract-v3-modellist"; // shown in errors, so you can confirm this file is the one deployed
 
 const goodVariant = {}; // per-model "thinking" setting that worked (kept while the function is warm)
 
@@ -30,16 +29,13 @@ export default async function handler(req, res) {
     .filter(Boolean);
   if (!keys.length) return res.status(500).json({ error: "server_not_configured" });
 
-  const listOf = v => (v || "").split(/[,;\s]+/).map(x => x.replace(/^["']+|["']+$/g, "").replace(/^models\//, "").trim()).filter(Boolean);
   // Preferred model first, then fallbacks
-  const models = [...new Set([
-    listOf(process.env.GEMINI_MODEL)[0] || "gemini-flash-latest",
-    "gemini-3.5-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-2.5-flash-lite",
-  ])];
+  // Built-in list: gemini-3.6-flash and gemini-3.5-flash only (no lite / 3.8 / preview models).
+  // To use something else, set GEMINI_MODELS in Vercel (comma-separated, tried in order).
+  const models = ["gemini-3.6-flash", "gemini-3.5-flash"];
   // GEMINI_MODELS (Vercel setting): your own ordered list replaces the default list above
   // (A comma-separated list typed into GEMINI_MODEL by mistake is accepted too.)
+  const listOf = v => (v || "").split(",").map(x => x.trim()).filter(Boolean);
   let custom = listOf(process.env.GEMINI_MODELS);
   if (!custom.length && listOf(process.env.GEMINI_MODEL).length > 1) custom = listOf(process.env.GEMINI_MODEL);
   if (custom.length) { models.length = 0; models.push(...new Set(custom)); }
@@ -66,10 +62,12 @@ export default async function handler(req, res) {
   });
 
   const started = Date.now();
+  const busy = new Set(); // models that answered 'high demand' / timed out: no point trying them on the other key
   const tried = [];
   let lastStatus = 502;
 
   for (const { model, key, ki } of combos) {
+    if (busy.has(model)) continue;
     const tag = `${model} (key ${ki + 1})`;
     let v = goodVariant[model] ?? 0;
     for (let attempt = 1; attempt <= 2; attempt++) {
@@ -110,13 +108,15 @@ export default async function handler(req, res) {
           r.status >= 500 || [404, 408, 409, 429].includes(r.status) ||
           /demand|overload|unavailable|quota|exhausted|try again/i.test(msg);
         if (retryable) {
+          if (r.status >= 500 || /demand|overload|unavailable/i.test(msg)) busy.add(model);
           if (attempt === 1 && !/quota|exhausted/i.test(msg) && r.status !== 404 && r.status !== 429) { await sleep(2500); continue; }
           break;
         }
         // Real errors (bad request) won't be fixed by another model or key
-        return res.status(502).json({ error: "upstream_error", detail: `[${tag}] (HTTP ${r.status}) ${msg} (${CODE_VERSION})` });
+        return res.status(502).json({ error: "upstream_error", detail: `[${tag}] (HTTP ${r.status}) ${msg}` });
       } catch (e) {
         clearTimeout(timer);
+        busy.add(model); // timed out
         tried.push(`${tag}: ${String(e).slice(0, 100)}`);
         break;
       }
@@ -126,6 +126,6 @@ export default async function handler(req, res) {
   const error = lastStatus === 429 ? "rate_limited" : "upstream_error";
   return res.status(lastStatus === 429 ? 429 : 502).json({
     error,
-    detail: "All models/keys were busy or out of free quota. Wait a minute and try again.\n\nTried (" + CODE_VERSION + "):\n" + tried.join("\n"),
+    detail: "All models/keys were busy or out of free quota. Wait a minute and try again.\n\nTried (models in use: " + models.join(", ") + "):\n" + tried.join("\n"),
   });
 }
